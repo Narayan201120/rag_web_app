@@ -726,4 +726,42 @@ class AdminVectorsView(APIView):
             'embedding_dim': index.d if index else 0,
             'total_documents': len(doc_stats),
             'documents': doc_stats,
-        }, status=status.HTTP_200_OK)
+        }, status=status.HTTP_200_OK
+        )
+
+""" CHAT EXPORT VIEW """
+class ChatExportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, chat_id):
+        try:
+            chat = ChatMessage.objects.get(id=chat_id, user=request.user)
+        except ChatMessage.DoesNotExist:
+            return Response(
+                {'error': 'Chat not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        format_type = request.query_params.get('export_format', 'json')
+        if format_type == 'markdown':
+            content = f"# Chat Export\n\n"
+            content += f"**Question:** {chat.question}\n\n"
+            content += f"**Answer:** {chat.answer}\n\n"
+            content += f"**Sources:** {','.join(chat.sources)}\n\n"
+            content += f"**Date:** {chat.created_at}\n\n"
+            from django.http import HttpResponse
+            response = HttpResponse(content, content_type='text/markdown')
+            response['Content-Disposition'] = f'attachment; filename="chat_{chat_id}.md"'
+            return response
+        else:
+            return Response({
+                'id': chat.id,
+                'question': chat.question,
+                'answer': chat.answer,
+                'sources': chat.sources,
+                'chunks': chat.chunks,
+                'created_at': str(chat.created_at),
+                'feedback': {
+                    'rating': chat.feedback.rating,
+                    'comment': chat.feedback.comment,
+                } if hasattr(chat, 'feedback') and chat.feedback else None,
+            }, status=status.HTTP_200_OK)

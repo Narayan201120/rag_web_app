@@ -32,4 +32,5 @@ urlpatterns = [
     path('search/rerank/', views.SearchRerankView.as_view(), name='search-rerank'),
     path('admin/usage/', views.AdminUsageView.as_view(), name='admin-usage'),
     path('admin/vectors/', views.AdminVectorsView.as_view(), name='admin-vectors'),
+    path('chat/<int:chat_id>/export/', views.ChatExportView.as_view(), name='chat-export'),
 ]

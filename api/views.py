@@ -15,7 +15,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from bs4 import BeautifulSoup
-from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog
+from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
@@ -85,7 +85,9 @@ class AskView(APIView):
         top_chunks, top_indices = search(question, docs, index, embeddings, top_k=3)
         sources = [chunk_sources[i] for i in top_indices]
         try:
-            answer = generate_answer(question, top_chunks)
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            user_key = profile.gemini_api_key or None
+            answer = generate_answer(question, top_chunks, api_key=user_key)
         except Exception as e:
             return Response(
                 {"error": "The answer service is temporarily unavailable. Please try again later."},
@@ -404,7 +406,9 @@ class ChatView(APIView):
         top_chunks, top_indices = search(question, docs, index, embeddings, top_k=3)
         sources = list(dict.fromkeys([chunk_sources[i] for i in top_indices]))
         try:
-            answer = generate_answer(question, top_chunks)
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            user_key = profile.gemini_api_key or None
+            answer = generate_answer(question, top_chunks, api_key=user_key)
         except Exception:
             return Response(
                 {'error': 'The answer service is temporarily unavailable.'},
@@ -765,3 +769,28 @@ class ChatExportView(APIView):
                     'comment': chat.feedback.comment,
                 } if hasattr(chat, 'feedback') and chat.feedback else None,
             }, status=status.HTTP_200_OK)
+
+""" SAVE/RETRIEVE API KEY VIEW """
+class APIKeyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        key = profile.gemini_api_key
+        if key:
+            masked = key[:4] + "." * (len(key) - 8) + key[-4:]
+        else:
+            masked = ''
+        return Response(
+            {'api_key': masked},
+            status=status.HTTP_200_OK
+        )
+    
+    def post(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        profile.gemini_api_key = request.data.get('api_key', '')
+        profile.save()
+        return Response(
+            {'message': 'API key saved successfully.'},
+            status=status.HTTP_200_OK
+        )

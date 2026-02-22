@@ -1,16 +1,16 @@
 import os
 import google.generativeai as genai
 
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    raise ValueError("Set the GEMINI_API_KEY environment variable.")
+DEFAULT_API_KEY = os.getenv("GEMINI_API_KEY")
 
-genai.configure(api_key=api_key)
+def generate_answer(query, context_chunks, api_key=None):
+    key = api_key or DEFAULT_API_KEY
+    if not key:
+        raise ValueError("No API key provided. Set your key in Settings or set GEMINI_API_KEY env variable.")
 
-# model = genai.GenerativeModel("gemini-3.1-pro-preview")
-model = genai.GenerativeModel("gemini-3-flash-preview")
+    genai.configure(api_key=key)
+    model = genai.GenerativeModel("gemini-2.0-flash")
 
-def generate_answer(query, context_chunks):
     context = "\n\n".join([f"[{i+1}] {chunk}" for i, chunk in enumerate(context_chunks)])
     prompt = f""" Use only the context below to answer the question. The context contains the answer; extract and cite it. Cite sources as [1], [2], etc. If the context clearly contains the answer, you must provide it.
 

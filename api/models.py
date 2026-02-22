@@ -70,3 +70,11 @@ class APIUsageLog(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.method} {self.endpoint}"
+
+""" USER PROFILE MODEL """
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    gemini_api_key = models.TextField(blank=True, default='')
+
+    def __str__(self):
+        return f"{self.user.username}'s profile"

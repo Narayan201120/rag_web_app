@@ -1,0 +1,5 @@
+RAG stands for Retrieval-Augmented Generation. It is a pattern where you first retrieve relevant pieces of text from a knowledge base, then pass those pieces plus the user's question to a language model to generate an answer. This way the model can use up-to-date or private information that was not in its training data.
+
+Django is a Python web framework. It encourages rapid development and clean design. Django REST framework adds tools for building REST APIs on top of Django, including serializers, viewsets, and browsable API pages.
+
+Vector search uses embeddings. An embedding is a list of numbers that represents the meaning of a piece of text. Similar texts have similar embeddings. By storing document chunks as vectors and comparing the question's vector to them, we can find the most relevant chunks quickly.

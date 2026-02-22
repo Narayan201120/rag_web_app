@@ -1,0 +1,4 @@
+The RAG architecture acts as a bridge between a static model and a dynamic data source. 
+Beyond simple retrieval, it provides a 'traceable' AI experience; because the model is forced to cite its sources from the retrieved text, users can verify the output against the original documents. 
+This effectively turns the LLM into a sophisticated reasoning engine that synthesizes provided facts rather than just a generative tool relying on internal patterns. 
+It solves the two biggest hurdles in enterprise AI: data freshness and 'hallucinations' (unsupported claims).

@@ -1,0 +1,26 @@
+# ===== Environment =====
+.env
+venv/
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.so
+
+# ===== Django =====
+db.sqlite3
+*.log
+
+# ===== Media =====
+media/
+
+# ===== Static =====
+static/
+
+# ===== OS files =====
+.DS_Store
+Thumbs.db
+
+# ===== IDE =====
+.vscode/
+.idea/

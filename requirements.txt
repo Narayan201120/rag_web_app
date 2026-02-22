@@ -1,0 +1,13 @@
+django
+djangorestframework
+sentence-transformers
+faiss-cpu
+openai
+numpy
+google-generativeai
+pypdf
+python-docx
+djangorestframework-simplejwt
+requests
+dotenv
+beautifulsoup4

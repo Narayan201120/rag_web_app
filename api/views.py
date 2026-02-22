@@ -15,7 +15,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from bs4 import BeautifulSoup
-from api.models import ChatMessage
+from api.models import ChatMessage, ChatFeedback, Collection, Document
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
@@ -415,6 +415,7 @@ class ChatView(APIView):
             question = question,
             answer = answer,
             sources = sources,
+            chunks = top_chunks,
         )
         return Response({
             'id': chat.id,
@@ -479,4 +480,137 @@ class StatusView(APIView):
                 'embedding_dimension': index.d if index is not None else 0,
             },
             'supported_formats': list(SUPPORTED_EXTENSIONS),
+        }, status=status.HTTP_200_OK)
+
+""" CHAT FEEDBACK VIEW """
+class ChatFeedbackView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, chat_id):
+        try:
+            chat = ChatMessage.objects.get(id=chat_id, user=request.user)
+        except ChatMessage.DoesNotExist:
+            return Response(
+                {'error': 'Chat not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        rating = request.data.get('rating')
+        if rating not in ['up', 'down']:
+            return Response(
+                {'error': 'Rating must be "up" or "down".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        comment = request.data.get('comment', '')
+        feedback, created = ChatFeedback.objects.update_or_create(
+            chat=chat,
+            defaults={'rating':  rating, 'comment': comment},
+        )
+        return Response({
+            'message': 'Feedback submitted.' if created else 'Feedback updated.',
+            'chat_id': chat.id,
+            'rating': feedback.rating,
+            'comment': feedback.comment,
+            'created_at': feedback.created_at,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+""" CHAT CITATIONS VIEW """
+class ChatCitationsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, chat_id):
+        try:
+            chat = ChatMessage.objects.get(id=chat_id, user=request.user)
+        except ChatMessage.DoesNotExist:
+            return Response(
+                {'error': 'Chat not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        citations = []
+        for i, chunk in enumerate(chat.chunks):
+            citations.append({
+                'index': i+1,
+                'text': chunk,
+                'source': chat.sources[i] if i < len(chat.sources) else 'unknown',
+            })
+        return Response({
+            'chat_id': chat.id,
+            'question': chat.question,
+            'total_citations': len(citations),
+            'citations': citations,
+        }, status=status.HTTP_200_OK)
+
+""" LIST & CREATE COLLECTIONS VIEW """
+class CollectionsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        collections = Collection.objects.filter(user=request.user)
+        data = []
+        for col in collections:
+            data.append({
+                'id': col.id,
+                'name': col.name,
+                'description': col.description,
+                'document_count': col.documents.count(),
+                'created_at': col.created_at,
+            })
+        return Response({
+            'count': len(data),
+            'collections': data,
+        }, status=status.HTTP_200_OK)
+    
+    def post(self, request):
+        name = request.data.get('name')
+        if not name or not name.strip():
+            return Response(
+                {'error': 'Collection name is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        description = request.data.get('description', '')
+        if Collection.objects.filter(user=request.user, name=name).exists():
+            return Response(
+                {'error': 'A collection with this name already exists.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        collection = Collection.objects.create(
+            user = request.user,
+            name=name,
+            description=description,
+        )
+        return Response({
+            'message': f'Collection "{name}" created.',
+            'id': collection.id,
+            'name': collection.name,
+            'description': collection.description,
+        }, status=status.HTTP_201_CREATED)
+
+
+""" MOVE DOCUMENT TO COLLECTION VIEW """
+class MoveDocumentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, filename):
+        collection_id = request.data.get('collection_id')
+        doc, created = Document.objects.get_or_create(
+            user = request.user,
+            filename = filename,
+            defaults = {'collection_id': collection_id},
+        )
+        if not created:
+            if collection_id:
+                try:
+                    collection = Collection.objects.get(id=collection_id, user=request.user)
+                except Collection.DoesNotExist:
+                    return Response(
+                        {'error': 'Collection not found.'},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+                doc.collection = collection
+            else:
+                doc.collection = None
+            doc.save()
+        return Response({
+            'message': f'"{filename}" moved successfully.',
+            'filename': doc.filename,
+            'collection': doc.collection.name if doc.collection else None,
         }, status=status.HTTP_200_OK)

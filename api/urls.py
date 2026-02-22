@@ -28,4 +28,6 @@ urlpatterns = [
     path('chat/<int:chat_id>/citations/', views.ChatCitationsView.as_view(), name='chat-citations'),
     path('collections/', views.CollectionsView.as_view(), name='collections'),
     path('documents/<str:filename>/move/', views.MoveDocumentView.as_view(), name='move-document'),
+    path('search/suggest/', views.SearchSuggestView.as_view(), name='search-suggest'),
+    path('search/rerank/', views.SearchRerankView.as_view(), name='search-rerank'),
 ]

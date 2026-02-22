@@ -4,7 +4,7 @@ from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from api.retriever import build_index, search
+from api.retriever import build_index, search, rerank
 from api.generator import generate_answer
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
@@ -614,3 +614,59 @@ class MoveDocumentView(APIView):
             'filename': doc.filename,
             'collection': doc.collection.name if doc.collection else None,
         }, status=status.HTTP_200_OK)
+
+""" SEARCH RERANK VIEW """
+class SearchRerankView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        query = request.data.get('query')
+        if not query or not query.strip():
+            return Response(
+                {'error': 'Please provide a non-empty query.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        initial_k = request.data.get('initial_k', 10)
+        final_k = request.data.get('final_k', 3)
+        top_chunks, top_indices = search(query, docs, index, embeddings, top_k=initial_k)
+        reranked = rerank(query, top_chunks, top_k=final_k)
+        results = []
+        for chunk, score in reranked:
+            source_idx = top_chunks.index(chunk)
+            results.append({
+                'chunk': chunk,
+                'source': chunk_sources[top_indices[source_idx]],
+                'relevance_score': round(score, 4)
+            })
+        return Response({
+            'query': query,
+            'count': len(results),
+            'results': results,
+        }, status=status.HTTP_200_OK)
+
+""" SEARCH SUGGEST VIEW """
+class SearchSuggestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get('q', '').lower().strip()
+        if not query:
+            return Response(
+                {'error': 'Please provide a query parameter "q".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        suggestions = set()
+        for source in chunk_sources:
+            name = os.path.splitext(source)[0].replace('-', ' ').replace('_', ' ')
+            if query in name.lower():
+                suggestions.add(name)
+        for chunk in docs:
+            words = chunk.split()[:10]
+            line = ' '.join(words)
+            if query in line.lower():
+                suggestions.add(line)
+        return Response({
+            'query': query,
+            'count': len(suggestions),
+            'suggestions': sorted(suggestions)[:10],
+        }, status=status.HTTP_200_OK)       

@@ -15,7 +15,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from bs4 import BeautifulSoup
-from api.models import ChatMessage, ChatFeedback, Collection, Document
+from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
@@ -669,4 +669,61 @@ class SearchSuggestView(APIView):
             'query': query,
             'count': len(suggestions),
             'suggestions': sorted(suggestions)[:10],
-        }, status=status.HTTP_200_OK)       
+        }, status=status.HTTP_200_OK) 
+
+""" ADMIN USAGE VIEW """
+class AdminUsageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Admin access required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        from django.db.models import Count
+        from django.utils import timezone
+        from datetime import timedelta
+
+        since = timezone.now() - timedelta(days=7)
+        total_calls = APIUsageLog.objects.filter(created_at__gte=since).count()
+        per_user = (
+            APIUsageLog.objects.filter(created_at__gte=since)
+            .values('user__username')
+            .annotate(call_count=Count('id'))
+            .order_by('-call_count')[:10]
+        )
+        per_endpoint = (
+            APIUsageLog.objects.filter(created_at__gte=since)
+            .values('endpoint')
+            .annotate(call_count=Count('id'))
+            .order_by('-call_count')[:10]
+        )
+        return Response({
+            'period': 'last_7_days',
+            'total_calls': total_calls,
+            'per_user': list(per_user),
+            'top_endpoints': list(per_endpoint),
+        }, status=status.HTTP_200_OK)
+
+""" ADMIN VECTORS VIEW """
+class AdminVectorsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_staff:
+            return Response(
+                {'error': 'Admin access required.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        doc_stats = {}
+        for i, source in enumerate(chunk_sources):
+            if source not in doc_stats:
+                doc_stats[source] = {'chunks': 0, 'sample': docs[i][:100]}
+            doc_stats[source]['chunks'] += 1
+        return Response({
+            'total_vectors': index.ntotal if index else 0,
+            'embedding_dim': index.d if index else 0,
+            'total_documents': len(doc_stats),
+            'documents': doc_stats,
+        }, status=status.HTTP_200_OK)

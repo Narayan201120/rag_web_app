@@ -30,4 +30,6 @@ urlpatterns = [
     path('documents/<str:filename>/move/', views.MoveDocumentView.as_view(), name='move-document'),
     path('search/suggest/', views.SearchSuggestView.as_view(), name='search-suggest'),
     path('search/rerank/', views.SearchRerankView.as_view(), name='search-rerank'),
+    path('admin/usage/', views.AdminUsageView.as_view(), name='admin-usage'),
+    path('admin/vectors/', views.AdminVectorsView.as_view(), name='admin-vectors'),
 ]

@@ -56,3 +56,17 @@ class Document(models.Model):
 
     def __str__(self):
         return self.filename
+
+""" API USAGE LOG MODEL """
+class APIUsageLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='usage_logs')
+    endpoint = models.CharField(max_length=255)
+    method = models.CharField(max_length=10)
+    status_code = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.method} {self.endpoint}"

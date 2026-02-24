@@ -1,6 +1,6 @@
 # RAG Web App — API Endpoints
 
-> **Total Endpoints Implemented: 28**
+> **Total Endpoints Implemented: 30**
 
 ---
 
@@ -63,6 +63,13 @@
 | `/api/collections/` | GET | ✅ | List all user-created collections with document counts |
 | `/api/collections/` | POST | ✅ | Create a new collection (e.g., "Legal Docs", "HR Policies") |
 
+## User Settings
+
+| Endpoint | Method | Auth Required | Description |
+|---|---|---|---|
+| `/api/settings/api-key/` | GET | ✅ | Retrieve the user's Gemini API key (masked) |
+| `/api/settings/api-key/` | POST | ✅ | Save or update the user's Gemini API key |
+
 ## Ingestion & System
 
 | Endpoint | Method | Auth Required | Description |
@@ -92,6 +99,7 @@
 - **Email Enumeration Prevention**: Forgot-password returns the same message regardless of whether the email exists
 - **Admin-Only Endpoints**: Usage and vector stats require `is_staff=True`
 - **Usage Tracking Middleware**: Automatically logs every authenticated API call
+- **Per-User API Keys**: Each user can provide their own Gemini API key; falls back to server default
 
 ## Tech Stack
 
@@ -103,3 +111,4 @@
 - **Google Gemini** (AI answer generation)
 - **BeautifulSoup4** (web scraping for URL uploads)
 - **SQLite** (database for users, chat history, token blacklist)
+- **React** (frontend SPA)

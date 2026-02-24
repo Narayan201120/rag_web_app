@@ -29,19 +29,62 @@ function App() {
 
     return (
         <div className="App">
-            <nav>
-                <span>🔍 RAG Web App</span>
-                <div>
-                    <button onClick={() => setPage('chat')}>Chat</button>
-                    <button onClick={() => setPage('documents')}>Documents</button>
-                    <button onClick={() => setPage('search')}>Search</button>
-                    <button onClick={() => setPage('settings')}>Settings</button>
+            {/* Permanent Left Sidebar */}
+            <nav className="app-sidebar">
+                <div className="sidebar-brand">
+                    <span className="brand-name">RAG</span>
+                    <span className="brand-tag">DOCUMENT AI</span>
+                </div>
+
+                <div className="sidebar-nav">
+                    <button
+                        className={page === 'chat' ? 'active' : ''}
+                        onClick={() => setPage('chat')}
+                    >
+                        <span className="nav-icon">⌘</span>
+                        <span>Chat</span>
+                    </button>
+                    <button
+                        className={page === 'documents' ? 'active' : ''}
+                        onClick={() => setPage('documents')}
+                    >
+                        <span className="nav-icon">◆</span>
+                        <span>Documents</span>
+                    </button>
+                    <button
+                        className={page === 'search' ? 'active' : ''}
+                        onClick={() => setPage('search')}
+                    >
+                        <span className="nav-icon">⊙</span>
+                        <span>Search</span>
+                    </button>
+                    <button
+                        className={page === 'settings' ? 'active' : ''}
+                        onClick={() => setPage('settings')}
+                    >
+                        <span className="nav-icon">⚙</span>
+                        <span>Settings</span>
+                    </button>
+                </div>
+
+                <div className="sidebar-footer">
+                    <div className="sidebar-status">
+                        <span className="status-dot online"></span>
+                        <span>SYSTEM ONLINE</span>
+                    </div>
+                    <button className="sidebar-logout" onClick={handleLogout}>
+                        Sign Out
+                    </button>
                 </div>
             </nav>
-            {page === 'chat' && <Chat />}
-            {page === 'documents' && <Documents />}
-            {page === 'search' && <Search />}
-            {page === 'settings' && <Settings onLogout={handleLogout} />}
+
+            {/* Main Content */}
+            <main className="app-main">
+                {page === 'chat' && <Chat />}
+                {page === 'documents' && <Documents />}
+                {page === 'search' && <Search />}
+                {page === 'settings' && <Settings onLogout={handleLogout} />}
+            </main>
         </div>
     );
 }

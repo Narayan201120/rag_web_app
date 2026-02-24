@@ -15,7 +15,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 from bs4 import BeautifulSoup
-from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile
+from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile, Conversation
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
@@ -398,55 +398,106 @@ class ChatView(APIView):
 
     def post(self, request):
         question = request.data.get('question')
+        conversation_id = request.data.get('conversation_id')
+
         if not question or not question.strip():
             return Response(
                 {'error': 'Please provide a non-empty question.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
+        if conversation_id:
+            try:
+                conversation = Conversation.objects.get(id=conversation_id, user=request.user)
+            except Conversation.DoesNotExist:
+                return Response(
+                    {'error': 'Conversation not found.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            conversation = Conversation.objects.create(
+                user=request.user,
+                title=question[:50],
+            )
+
+        past_messages = ChatMessage.objects.filter(
+            conversation=conversation
+        ).order_by('created_at')
+        chat_history = [
+            {'question': m.question, 'answer': m.answer} 
+            for m in past_messages
+        ]
+
         top_chunks, top_indices = search(question, docs, index, embeddings, top_k=3)
         sources = list(dict.fromkeys([chunk_sources[i] for i in top_indices]))
         try:
             profile, _ = UserProfile.objects.get_or_create(user=request.user)
             user_key = profile.gemini_api_key or None
-            answer = generate_answer(question, top_chunks, api_key=user_key)
+            answer = generate_answer(question, top_chunks, api_key=user_key, chat_history=chat_history)
         except Exception:
             return Response(
-                {'error': 'The answer service is temporarily unavailable.'},
+                {'error': 'The answer service is temporarily unavailable'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
         chat = ChatMessage.objects.create(
-            user = request.user,
-            question = question,
-            answer = answer,
-            sources = sources,
-            chunks = top_chunks,
+            user=request.user,
+            conversation=conversation,
+            question=question,
+            answer=answer,
+            sources=sources,
+            chunks=top_chunks,
         )
         return Response({
             'id': chat.id,
+            'conversation_id': conversation.id,
             'question': chat.question,
             'answer': chat.answer,
             'sources': chat.sources,
             'created_at': chat.created_at,
         }, status=status.HTTP_200_OK)
 
-""" CHAT HISTORY VIEW """
+""" LIST CONVERSATIONS """
 class ChatHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        chats = ChatMessage.objects.filter(user=request.user)
-        history = []
-        for chat in chats:
-            history.append({
-                'id': chat.id,
-                'question': chat.question,
-                'answer': chat.answer,
-                'sources': chat.sources,
-                'created_at': chat.created_at,
+        conversations = Conversation.objects.filter(user=request.user)
+        result = []
+        for conv in conversations:
+            last_msg = conv.messages.order_by('-created_at').first()
+            result.append({
+                'id': conv.id,
+                'title': conv.title,
+                'created_at': conv.created_at,
+                'updated_at': conv.updated_at,
+                'message_count': conv.messages.count(),
+                'last_message': last_msg.question[:80] if last_msg else '',
             })
         return Response({
-            'count': len(history),
-            'chats': history,
+            'count': len(result),
+            'conversations': result,
+        }, status=status.HTTP_200_OK)
+
+""" LOAD A SPECIFIC CONVERSATION'S MESSAGES """
+class ConversationDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, conversation_id):
+        try:
+            conv = Conversation.objects.get(id=conversation_id, user=request.user)
+        except Conversation.DoesNotExist:
+            return Response({'error': 'Conversation not found.'}, status=status.HTTP_404_NOT_FOUND)
+        messages = conv.messages.order_by('created_at')
+        return Response({
+            'id': conv.id,
+            'title': conv.title,
+            'messages': [{
+                'id': m.id,
+                'question': m.question,
+                'answer': m.answer,
+                'sources': m.sources,
+                'created_at': m.created_at,
+            } for m in messages],
         }, status=status.HTTP_200_OK)
 
 """ INGEST VIEW """

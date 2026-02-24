@@ -1,9 +1,23 @@
 from django.db import models
 from django.contrib.auth.models import User
 
+""" CONVERSATION MODEL( groups chat messages into sessions ) """
+class Conversation(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='conversations')
+    title = models.CharField(max_length=255, default='New Conversation')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.user.username}: {self.title}'
+
 """ CHAT MESSAGE MODEL """
 class ChatMessage(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chats')
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='messages', null=True, blank=True)
     question = models.TextField()
     answer = models.TextField()
     sources = models.JSONField(default=list)

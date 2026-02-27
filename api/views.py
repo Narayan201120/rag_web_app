@@ -3,6 +3,7 @@ import os
 import socket
 import ipaddress
 from urllib.parse import urlparse
+from pathlib import Path
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -17,8 +18,10 @@ from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.utils import timezone
 from bs4 import BeautifulSoup
-from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile, Conversation
+from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile, Conversation, Task
+from api.tasks import submit_task, TaskCancelled
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
@@ -75,16 +78,27 @@ def _is_safe_user_url(url):
         return False
     return not _is_private_or_local_host(parsed.hostname)
 
-def load_documents():
+
+def _safe_filename(name, fallback):
+    cleaned = Path(name).name.strip()
+    return cleaned or fallback
+
+
+def load_documents(progress_callback=None, is_cancelled=None):
     global docs, chunk_sources, index, embeddings, _documents_loaded
     docs.clear()
     chunk_sources.clear()
 
     os.makedirs(DOC_DIR, exist_ok=True)
+    files = [
+        filename for filename in sorted(os.listdir(DOC_DIR))
+        if filename.lower().endswith(SUPPORTED_EXTENSIONS)
+    ]
+    total_files = max(1, len(files))
 
-    for filename in sorted(os.listdir(DOC_DIR)):
-        if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
-            continue
+    for idx, filename in enumerate(files, start=1):
+        if is_cancelled and is_cancelled():
+            raise TaskCancelled("Task was cancelled.")
         filepath = os.path.join(DOC_DIR, filename)
         try:
             content = extract_text_from_file(filepath, filename)
@@ -98,7 +112,14 @@ def load_documents():
         for para in paragraphs:
             docs.append(para)
             chunk_sources.append(filename)
+        if progress_callback:
+            progress = 55 + int((idx / total_files) * 35)
+            progress_callback(min(progress, 90), f"Processed {idx}/{len(files)} files.")
 
+    if is_cancelled and is_cancelled():
+        raise TaskCancelled("Task was cancelled.")
+    if progress_callback:
+        progress_callback(95, "Building vector index...")
     try:
         index, embeddings = build_index(docs)
     except Exception:
@@ -109,6 +130,81 @@ def load_documents():
 def ensure_documents_loaded(force=False):
     if force or not _documents_loaded:
         load_documents()
+
+
+def _download_url_to_document(url, update=None, is_cancelled=None):
+    if is_cancelled and is_cancelled():
+        raise TaskCancelled("Task was cancelled.")
+
+    if update:
+        update(15, "Downloading URL content...")
+
+    response = http_requests.get(url, timeout=10, allow_redirects=False)
+    if 300 <= response.status_code < 400:
+        raise ValueError("Redirecting URLs are not allowed.")
+    response.raise_for_status()
+
+    if is_cancelled and is_cancelled():
+        raise TaskCancelled("Task was cancelled.")
+
+    content_type = response.headers.get("Content-Type", "")
+    parsed = urlparse(url)
+    filename = _safe_filename(Path(parsed.path).name, "downloaded_doc.txt")
+
+    if "text/html" in content_type:
+        if update:
+            update(35, "Parsing HTML content...")
+        soup = BeautifulSoup(response.text, "html.parser")
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
+            tag.decompose()
+        text = soup.get_text(separator="\n", strip=True)
+        if not filename.lower().endswith(".txt"):
+            filename = f"{Path(filename).stem}.txt"
+        filepath = os.path.join(DOC_DIR, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(text)
+    else:
+        if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
+            filename = f"{filename}.txt"
+        filepath = os.path.join(DOC_DIR, filename)
+        with open(filepath, "wb") as f:
+            f.write(response.content)
+
+    return filename
+
+
+def _run_reindex_task(update=None, is_cancelled=None):
+    if update:
+        update(50, "Indexing documents...")
+
+    load_documents(progress_callback=update, is_cancelled=is_cancelled)
+
+    return {
+        "message": "Documents ingested successfully.",
+        "total_chunks": len(docs),
+        "total_documents": len(set(chunk_sources)),
+        "documents": list(dict.fromkeys(chunk_sources)),
+    }
+
+
+def _run_upload_task(filename, update=None, is_cancelled=None):
+    if update:
+        update(30, f'Uploaded "{filename}". Starting ingestion...')
+    result = _run_reindex_task(update=update, is_cancelled=is_cancelled)
+    result["message"] = f'"{filename}" uploaded and indexed successfully.'
+    result["filename"] = filename
+    return result
+
+
+def _run_url_ingest_task(url, update=None, is_cancelled=None):
+    filename = _download_url_to_document(url, update=update, is_cancelled=is_cancelled)
+    if update:
+        update(55, f'Fetched "{filename}". Starting ingestion...')
+    result = _run_reindex_task(update=update, is_cancelled=is_cancelled)
+    result["message"] = f'"{filename}" downloaded and indexed successfully.'
+    result["filename"] = filename
+    result["source_url"] = url
+    return result
 
 class HealthView(APIView):
     def get(self, request):
@@ -230,10 +326,23 @@ class DocumentUploadView(APIView):
         with open(filepath, 'wb') as f:
             for chunk in uploaded_file.chunks():
                 f.write(chunk)
-        ensure_documents_loaded(force=True)
+
+        task = Task.objects.create(
+            user=request.user,
+            task_type="upload",
+            status="pending",
+            progress=5,
+            message=f'Queued upload task for "{uploaded_file.name}".',
+        )
+        submit_task(task.id, _run_upload_task, uploaded_file.name)
+
         return Response(
-            {'message': f'"{uploaded_file.name}" uploaded and indexed successfully.'},
-            status=status.HTTP_201_CREATED
+            {
+                "task_id": str(task.id),
+                "status": task.status,
+                "message": task.message,
+            },
+            status=status.HTTP_202_ACCEPTED,
         )
 
 """ LIST DOCUMENTS VIEW """
@@ -418,44 +527,21 @@ class UploadURLView(APIView):
                 {'error': 'URL is not allowed.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        try:
-            response = http_requests.get(url, timeout=10, allow_redirects=False)
-            if 300 <= response.status_code < 400:
-                return Response(
-                    {'error': 'Redirecting URLs are not allowed.'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            response.raise_for_status()
-        except http_requests.RequestException as e:
-            return Response(
-                {'error': 'Failed to download from the provided URL.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        content_type = response.headers.get('Content-Type', '')
-        filename = url.split('/')[-1] or 'downloaded_doc'
 
-        if 'text/html' in content_type:
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
-                tag.decompose()
-            text = soup.get_text(separator='\n', strip=True)
-            if not filename.endswith('.txt'):
-                filename = filename.split('.')[0] + '.txt'
-            filepath = os.path.join(DOC_DIR, filename)
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(text)
-        else:
-            if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
-                filename += '.txt'
-            filepath = os.path.join(DOC_DIR, filename)
-            with open(filepath, 'wb') as f:
-                f.write(response.content)
-        ensure_documents_loaded(force=True)
+        task = Task.objects.create(
+            user=request.user,
+            task_type="url_ingest",
+            status="pending",
+            progress=5,
+            message="Queued URL ingestion task.",
+        )
+        submit_task(task.id, _run_url_ingest_task, url)
+
         return Response({
-            'message': f'"{filename}" downloaded and indexed successfully.',
-            'source_url': url,
-        }, status=status.HTTP_201_CREATED)
+            "task_id": str(task.id),
+            "status": task.status,
+            "message": task.message,
+        }, status=status.HTTP_202_ACCEPTED)
         
 """ CHAT VIEW """
 class ChatView(APIView):
@@ -576,19 +662,22 @@ class IngestView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        try:
-            ensure_documents_loaded(force=True)
-            return Response({
-                'message': 'Documents ingested successfully.',
-                'total_chunks': len(docs),
-                'total_documents': len(set(chunk_sources)),
-                'documents': list(dict.fromkeys(chunk_sources)),
-            }, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response(
-                {'error': f'Ingestion failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+        task = Task.objects.create(
+            user=request.user,
+            task_type="ingest",
+            status="pending",
+            progress=5,
+            message="Queued ingestion task.",
+        )
+        submit_task(task.id, _run_reindex_task)
+        return Response(
+            {
+                "task_id": str(task.id),
+                "status": task.status,
+                "message": task.message,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
 
 """ STATUS VIEW """
 class StatusView(APIView):
@@ -818,7 +907,6 @@ class AdminUsageView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         from django.db.models import Count
-        from django.utils import timezone
         from datetime import timedelta
 
         since = timezone.now() - timedelta(days=7)
@@ -925,5 +1013,57 @@ class APIKeyView(APIView):
         profile.save()
         return Response(
             {'message': 'API key saved successfully.'},
+            status=status.HTTP_200_OK
+        )
+
+
+""" TASK STATUS VIEW """
+class TaskStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, task_id):
+        try:
+            task = Task.objects.get(id=task_id, user=request.user)
+        except Task.DoesNotExist:
+            return Response(
+                {'error': 'Task not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        return Response({
+            'task_id': str(task.id),
+            'task_type': task.task_type,
+            'status': task.status,
+            'progress': task.progress,
+            'message': task.message,
+            'result': task.result,
+            'error': task.error,
+            'created_at': str(task.created_at),
+            'started_at': str(task.started_at) if task.started_at else None,
+            'finished_at': str(task.finished_at) if task.finished_at else None,
+        }, status=status.HTTP_200_OK
+        )
+
+""" TASK CANCEL VIEW """
+class TaskCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, task_id):
+        try:
+            task = Task.objects.get(id=task_id, user=request.user)
+        except Task.DoesNotExist:
+            return Response(
+                {'error': 'Task not found.'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        if task.status not in ['pending', 'processing']:
+            return Response(
+                {'error': f'Task cannot be cancelled from status "{task.status}"'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        task.status = 'cancelled'
+        task.finished_at = timezone.now()
+        task.save(update_fields=['status', 'finished_at', 'updated_at'])
+        return Response(
+            {'message': 'Task cancelled successfully.'},
             status=status.HTTP_200_OK
         )

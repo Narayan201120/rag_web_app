@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+import uuid
 
 """ CONVERSATION MODEL( groups chat messages into sessions ) """
 class Conversation(models.Model):
@@ -92,3 +93,38 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f"{self.user.username}'s profile"
+
+""" TASK MODEL """
+class Task(models.Model):
+    TASK_TYPES = [
+        ('upload', 'Upload'),
+        ('ingest', 'Ingest'),
+        ('url_ingest', 'URL Ingest'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('completed', 'Completed'),
+        ('failed', 'Failed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='tasks')
+    task_type = models.CharField(max_length=20, choices=TASK_TYPES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    progress = models.PositiveSmallIntegerField(default=0)
+    message = models.TextField(blank=True, default='')
+    result = models.JSONField(default=dict)
+    error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} - {self.task_type} - {self.status}"

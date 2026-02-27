@@ -35,4 +35,6 @@ urlpatterns = [
     path('chat/<int:chat_id>/export/', views.ChatExportView.as_view(), name='chat-export'),
     path('settings/api-key/', views.APIKeyView.as_view()),
     path('chat/conversations/<int:conversation_id>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
+    path('tasks/<uuid:task_id>/', views.TaskStatusView.as_view(), name='task-status'),
+    path('tasks/<uuid:task_id>/cancel/', views.TaskCancelView.as_view(), name='task-cancel'),
 ]

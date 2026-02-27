@@ -11,3 +11,5 @@ djangorestframework-simplejwt
 requests
 dotenv
 beautifulsoup4
+dj-database-url
+psycopg[binary]

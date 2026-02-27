@@ -2,7 +2,7 @@ import requests as http_requests
 import os
 import socket
 import ipaddress
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from pathlib import Path
 from django.conf import settings
 from rest_framework.views import APIView
@@ -84,6 +84,16 @@ def _safe_filename(name, fallback):
     return cleaned or fallback
 
 
+def _resolve_document_path(filename):
+    safe_name = Path(filename or "").name
+    if not safe_name:
+        return None, None
+    filepath = os.path.join(DOC_DIR, safe_name)
+    if not os.path.isfile(filepath):
+        return safe_name, None
+    return safe_name, filepath
+
+
 def load_documents(progress_callback=None, is_cancelled=None):
     global docs, chunk_sources, index, embeddings, _documents_loaded
     docs.clear()
@@ -133,13 +143,70 @@ def ensure_documents_loaded(force=False):
 
 
 def _download_url_to_document(url, update=None, is_cancelled=None):
+    clean_url = (url or "").strip()
+    if not clean_url:
+        raise ValueError("Please provide a valid URL.")
+    os.makedirs(DOC_DIR, exist_ok=True)
+
     if is_cancelled and is_cancelled():
         raise TaskCancelled("Task was cancelled.")
 
     if update:
         update(15, "Downloading URL content...")
 
-    response = http_requests.get(url, timeout=10, allow_redirects=False)
+    parsed = urlparse(clean_url)
+    # Wikipedia often blocks generic HTML scraping with 403.
+    # Use MediaWiki's API for /wiki/* URLs to fetch plain text safely.
+    if parsed.hostname and parsed.hostname.endswith("wikipedia.org") and parsed.path.startswith("/wiki/"):
+        raw_title = parsed.path.split("/wiki/", 1)[1]
+        title = unquote(raw_title).strip()
+        if title:
+            if update:
+                update(25, "Fetching Wikipedia page text...")
+            wiki_api_url = f"{parsed.scheme}://{parsed.netloc}/w/api.php"
+            wiki_response = http_requests.get(
+                wiki_api_url,
+                timeout=10,
+                params={
+                    "action": "query",
+                    "format": "json",
+                    "prop": "extracts",
+                    "explaintext": "1",
+                    "exsectionformat": "plain",
+                    "redirects": "1",
+                    "titles": title.replace("_", " "),
+                },
+                headers={
+                    "User-Agent": "rag-web-app/1.0",
+                    "Accept": "application/json",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+            )
+            wiki_response.raise_for_status()
+            wiki_data = wiki_response.json()
+            pages = (wiki_data.get("query") or {}).get("pages") or {}
+            page = next(iter(pages.values()), {})
+            extract = (page.get("extract") or "").strip()
+            if not extract:
+                raise ValueError("Wikipedia page text could not be fetched for this URL.")
+            filename = _safe_filename(f"{title}.txt", "wikipedia_page.txt")
+            if not filename.lower().endswith(".txt"):
+                filename = f"{Path(filename).stem}.txt"
+            filepath = os.path.join(DOC_DIR, filename)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(extract)
+            return filename
+
+    response = http_requests.get(
+        clean_url,
+        timeout=10,
+        allow_redirects=False,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+    )
     if 300 <= response.status_code < 400:
         raise ValueError("Redirecting URLs are not allowed.")
     response.raise_for_status()
@@ -148,7 +215,6 @@ def _download_url_to_document(url, update=None, is_cancelled=None):
         raise TaskCancelled("Task was cancelled.")
 
     content_type = response.headers.get("Content-Type", "")
-    parsed = urlparse(url)
     filename = _safe_filename(Path(parsed.path).name, "downloaded_doc.txt")
 
     if "text/html" in content_type:
@@ -197,13 +263,14 @@ def _run_upload_task(filename, update=None, is_cancelled=None):
 
 
 def _run_url_ingest_task(url, update=None, is_cancelled=None):
-    filename = _download_url_to_document(url, update=update, is_cancelled=is_cancelled)
+    clean_url = (url or "").strip()
+    filename = _download_url_to_document(clean_url, update=update, is_cancelled=is_cancelled)
     if update:
         update(55, f'Fetched "{filename}". Starting ingestion...')
     result = _run_reindex_task(update=update, is_cancelled=is_cancelled)
     result["message"] = f'"{filename}" downloaded and indexed successfully.'
     result["filename"] = filename
-    result["source_url"] = url
+    result["source_url"] = clean_url
     return result
 
 class HealthView(APIView):
@@ -310,6 +377,7 @@ class DocumentUploadView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
+        os.makedirs(DOC_DIR, exist_ok=True)
         uploaded_file = request.FILES.get('document') or request.FILES.get('file')
         if not uploaded_file:
             return Response(
@@ -350,6 +418,7 @@ class ListDocumentsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        os.makedirs(DOC_DIR, exist_ok=True)
         files = []
         for filename in os.listdir(DOC_DIR):
             if filename.lower().endswith(SUPPORTED_EXTENSIONS):
@@ -369,17 +438,45 @@ class ListDocumentsView(APIView):
 class DeleteDocumentView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def delete(self, request, filename):
-        filepath = os.path.join(DOC_DIR, filename)
-        if not os.path.exists(filepath):
+    def get(self, request, filename):
+        safe_name, filepath = _resolve_document_path(filename)
+        if not filepath:
             return Response(
-                {'error': f'Document {filename} not found!'},
+                {'error': f'Document {safe_name or filename} not found!'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        try:
+            content = extract_text_from_file(filepath, safe_name)
+        except Exception:
+            return Response(
+                {'error': 'Failed to read document content.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        preview_limit = 20000
+        preview_text = content[:preview_limit]
+        return Response(
+            {
+                'name': safe_name,
+                'extension': os.path.splitext(safe_name)[1].lower(),
+                'content': preview_text,
+                'total_characters': len(content),
+                'truncated': len(content) > preview_limit,
+            },
+            status=status.HTTP_200_OK
+        )
+
+    def delete(self, request, filename):
+        safe_name, filepath = _resolve_document_path(filename)
+        if not filepath:
+            return Response(
+                {'error': f'Document {safe_name or filename} not found!'},
                 status=status.HTTP_404_NOT_FOUND
             )
         os.remove(filepath)
         ensure_documents_loaded(force=True)
         return Response(
-            {'message': f'"{filename}" deleted and index rebuilt.'},
+            {'message': f'"{safe_name}" deleted and index rebuilt.'},
             status=status.HTTP_200_OK
         )
 

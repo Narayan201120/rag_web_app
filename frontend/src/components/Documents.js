@@ -9,16 +9,60 @@ function Documents() {
     const [url, setUrl] = useState('');
     const [message, setMessage] = useState('');
     const [taskInfo, setTaskInfo] = useState(null);
+    const [previewDoc, setPreviewDoc] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
     const pollRef = useRef(null);
-    const token = localStorage.getItem('access');
-    const headers = { Authorization: `Bearer ${token}` };
+
+    const authHeaders = () => {
+        const token = localStorage.getItem('access');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    };
+
+    const requestWithRefresh = async (requestFn) => {
+        try {
+            return await requestFn(authHeaders());
+        } catch (err) {
+            if (err.response?.status !== 401) throw err;
+            const refresh = localStorage.getItem('refresh');
+            if (!refresh) {
+                throw err;
+            }
+            try {
+                const refreshRes = await axios.post(`${API}/token/refresh/`, { refresh });
+                localStorage.setItem('access', refreshRes.data.access);
+                return await requestFn(authHeaders());
+            } catch (refreshErr) {
+                localStorage.removeItem('access');
+                localStorage.removeItem('refresh');
+                throw refreshErr;
+            }
+        }
+    };
+
+    const normalizeHttpUrl = (rawValue) => {
+        const trimmed = (rawValue || '').trim();
+        if (!trimmed) return null;
+
+        const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+        try {
+            const parsed = new URL(withScheme);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return null;
+            }
+            return parsed.toString();
+        } catch {
+            return null;
+        }
+    };
 
     const fetchDocs = async () => {
         try {
-            const res = await axios.get(`${API}/documents/`, { headers });
+            const res = await requestWithRefresh((headers) => axios.get(`${API}/documents/`, { headers }));
             setDocuments(res.data.documents);
         } catch (err) {
-            console.error(err);
+            setDocuments([]);
+            setMessage(err.response?.data?.error || 'Failed to load documents. Please sign in again.');
         }
     };
 
@@ -41,7 +85,7 @@ function Documents() {
 
         pollRef.current = setInterval(async () => {
             try {
-                const res = await axios.get(`${API}/tasks/${taskId}/`, { headers });
+                const res = await requestWithRefresh((headers) => axios.get(`${API}/tasks/${taskId}/`, { headers }));
                 const task = res.data;
                 setTaskInfo({
                     id: taskId,
@@ -78,9 +122,9 @@ function Documents() {
         const formData = new FormData();
         formData.append('document', file);
         try {
-            const res = await axios.post(`${API}/upload/`, formData, {
+            const res = await requestWithRefresh((headers) => axios.post(`${API}/upload/`, formData, {
                 headers: { ...headers, 'Content-Type': 'multipart/form-data' },
-            });
+            }));
             setMessage(res.data.message || 'Upload task queued.');
             setFile(null);
             startPollingTask(res.data.task_id);
@@ -91,9 +135,13 @@ function Documents() {
 
     const handleUrlUpload = async (e) => {
         e.preventDefault();
-        if (!url.trim()) return;
+        const normalizedUrl = normalizeHttpUrl(url);
+        if (!normalizedUrl) {
+            setMessage('Please enter a valid http(s) URL.');
+            return;
+        }
         try {
-            const res = await axios.post(`${API}/upload-url/`, { url }, { headers });
+            const res = await requestWithRefresh((headers) => axios.post(`${API}/upload-url/`, { url: normalizedUrl }, { headers }));
             setMessage(res.data.message || 'URL ingestion task queued.');
             setUrl('');
             startPollingTask(res.data.task_id);
@@ -105,12 +153,28 @@ function Documents() {
     const handleDelete = async (filename) => {
         if (!window.confirm(`Delete "${filename}"?`)) return;
         try {
-            await axios.delete(`${API}/documents/${filename}/`, { headers });
+            await requestWithRefresh((headers) => axios.delete(`${API}/documents/${encodeURIComponent(filename)}/`, { headers }));
             setMessage(`"${filename}" deleted.`);
             fetchDocs();
         } catch (err) {
             setMessage(err.response?.data?.error || 'Delete failed');
         }
+    };
+
+    const handleOpen = async (filename) => {
+        setPreviewLoading(true);
+        try {
+            const res = await requestWithRefresh((headers) => axios.get(`${API}/documents/${encodeURIComponent(filename)}/`, { headers }));
+            setPreviewDoc(res.data);
+        } catch (err) {
+            setMessage(err.response?.data?.error || 'Failed to open document.');
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    const closePreview = () => {
+        setPreviewDoc(null);
     };
 
     return (
@@ -134,7 +198,7 @@ function Documents() {
                 <form onSubmit={handleUrlUpload}>
                     <input
                         type="text"
-                        placeholder="Enter URL to scrape..."
+                        placeholder="https://example.com/article"
                         value={url}
                         onChange={(e) => setUrl(e.target.value)}
                     />
@@ -147,7 +211,10 @@ function Documents() {
                 {documents.map((doc, i) => (
                     <div key={i} className="doc-item">
                         <span>{doc.name} ({(doc.size_bytes / 1024).toFixed(1)} KB)</span>
-                        <button onClick={() => handleDelete(doc.name)} className="delete-btn">Delete</button>
+                        <div className="doc-actions">
+                            <button onClick={() => handleOpen(doc.name)} className="open-btn">Open</button>
+                            <button onClick={() => handleDelete(doc.name)} className="delete-btn">Delete</button>
+                        </div>
                     </div>
                 ))}
                 {documents.length === 0 && (
@@ -156,6 +223,31 @@ function Documents() {
                     </p>
                 )}
             </div>
+
+            {(previewLoading || previewDoc) && (
+                <div className="doc-preview-overlay" onClick={closePreview}>
+                    <div className="doc-preview-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="doc-preview-header">
+                            <h3>{previewDoc?.name || 'Opening document...'}</h3>
+                            <button className="close-preview-btn" onClick={closePreview}>Close</button>
+                        </div>
+                        <div className="doc-preview-body">
+                            {previewLoading ? (
+                                <p>Loading document content...</p>
+                            ) : (
+                                <>
+                                    <pre>{previewDoc?.content || 'No text extracted from this document.'}</pre>
+                                    {previewDoc?.truncated && (
+                                        <p className="preview-note">
+                                            Showing first 20,000 characters.
+                                        </p>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

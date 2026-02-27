@@ -29,18 +29,18 @@ function Admin() {
         fetchAll();
     }, []);
 
-    if (error) return <div className="admin-container"><h2>🛡️ Admin</h2><p className="error">{error}</p></div>;
+    if (error) return <div className="admin-container"><h2>Admin</h2><p className="error">{error}</p></div>;
 
     return (
         <div className="admin-container">
-            <h2>🛡️ Admin Dashboard</h2>
+            <h2>Admin Dashboard</h2>
 
             {status && (
                 <div className="admin-card">
                     <h3>System Status</h3>
                     <p>Status: <strong>{status.status}</strong></p>
                     <p>Server: {status.server}</p>
-                    <p>Vector DB Connected: {status.vector_database?.connected ? '✅' : '❌'}</p>
+                    <p>Vector DB Connected: {status.vector_database?.connected ? 'Yes' : 'No'}</p>
                     <p>Total Chunks: {status.vector_database?.total_chunks}</p>
                     <p>Embedding Dim: {status.vector_database?.embedding_dimension}</p>
                 </div>

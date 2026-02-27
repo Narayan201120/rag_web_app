@@ -38,7 +38,7 @@ function Account({ onLogout }) {
 
     return (
         <div className="account-container">
-            <h2>👤 Account</h2>
+            <h2>Account</h2>
             {account && (
                 <div className="account-info">
                     <p><strong>Username:</strong> {account.username}</p>
@@ -46,7 +46,7 @@ function Account({ onLogout }) {
                 </div>
             )}
             <div className="danger-zone">
-                <h3>⚠️ Danger Zone</h3>
+                <h3>Danger Zone</h3>
                 <p>Delete your account permanently:</p>
                 <input
                     type="password"

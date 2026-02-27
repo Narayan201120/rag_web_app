@@ -19,7 +19,7 @@ function Search() {
         const endpoint = mode === 'rerank' ? '/search/rerank/' : '/search/';
         try {
             const res = await axios.post(`${API}${endpoint}`, { query }, { headers });
-            setResults(res.data.results || res.data.chunks || []);
+            setResults(res.data.results || []);
         } catch (err) {
             alert('Search failed');
         }
@@ -28,7 +28,10 @@ function Search() {
 
     const handleSuggest = async (value) => {
         setQuery(value);
-        if (value.length < 2) { setSuggestions([]); return; }
+        if (value.length < 2) {
+            setSuggestions([]);
+            return;
+        }
         try {
             const res = await axios.get(`${API}/search/suggest/?q=${value}`, { headers });
             setSuggestions(res.data.suggestions || []);
@@ -39,7 +42,7 @@ function Search() {
 
     return (
         <div className="search-container">
-            <h2>🔎 Search Documents</h2>
+            <h2>Search Documents</h2>
             <div className="search-modes">
                 <button className={mode === 'search' ? 'active' : ''} onClick={() => setMode('search')}>Fast Search</button>
                 <button className={mode === 'rerank' ? 'active' : ''} onClick={() => setMode('rerank')}>Reranked Search</button>
@@ -64,10 +67,13 @@ function Search() {
                 {results.map((r, i) => (
                     <div key={i} className="result">
                         <p>{r.chunk || r}</p>
-                        {r.source && <span className="source">📄 {r.source}</span>}
+                        {r.source && <span className="source">Source: {r.source}</span>}
                         {r.relevance_score && <span className="score">Score: {r.relevance_score}</span>}
                     </div>
                 ))}
+                {results.length === 0 && !loading && query && (
+                    <p style={{ fontSize: '0.8125rem', color: '#6A6B75', marginTop: '16px' }}>No matches found.</p>
+                )}
             </div>
         </div>
     );

@@ -11,40 +11,36 @@ function Login({ onLogin, onSwitch }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const res = await axios.post(`${API}/sign-in/`, {
-                username,
-                password,
-            });
+            const res = await axios.post(`${API}/sign-in/`, { username, password });
             localStorage.setItem('access', res.data.tokens.access);
             localStorage.setItem('refresh', res.data.tokens.refresh);
             onLogin();
         } catch (err) {
-            setError('Invalid Username or Password');
+            setError('Invalid username or password.');
         }
     };
-    
+
     return (
         <div className="auth-container">
-            <h1>🔐 RAG Web App</h1>
+            <h1>RAG / DOCUMENT AI</h1>
             <form onSubmit={handleSubmit}>
                 <input
                     type="text"
                     placeholder="Username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    />
+                />
                 <input
                     type="password"
                     placeholder="Password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    />
+                />
                 {error && <p className="error">{error}</p>}
                 <button type="submit">Sign In</button>
             </form>
             <p className="switch">
-                Don't have an account?{' '}
-                <span onClick={onSwitch}>Sign Up</span>
+                Don&apos;t have an account? <span onClick={onSwitch}>Sign Up</span>
             </p>
         </div>
     );

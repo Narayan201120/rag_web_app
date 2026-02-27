@@ -13,12 +13,8 @@ function Signup({ onSwitch }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API}/sign-up/`, {
-                username,
-                email,
-                password,
-            });
-            setMessage('Account created! You can now sign in.');
+            await axios.post(`${API}/sign-up/`, { username, email, password });
+            setMessage('Account created. You can now sign in.');
             setError('');
         } catch (err) {
             setError(err.response?.data?.error || 'Signup failed');
@@ -28,7 +24,7 @@ function Signup({ onSwitch }) {
 
     return (
         <div className="auth-container">
-            <h1>📝 Create Account</h1>
+            <h1>RAG / DOCUMENT AI</h1>
             <form onSubmit={handleSubmit}>
                 <input
                     type="text"
@@ -53,8 +49,7 @@ function Signup({ onSwitch }) {
                 <button type="submit">Sign Up</button>
             </form>
             <p className="switch">
-                Already have an account?{' '}
-                <span onClick={onSwitch}>Sign In</span>
+                Already have an account? <span onClick={onSwitch}>Sign In</span>
             </p>
         </div>
     );

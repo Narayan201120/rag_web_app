@@ -1,5 +1,8 @@
 import requests as http_requests
 import os
+import socket
+import ipaddress
+from urllib.parse import urlparse
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -42,11 +45,42 @@ docs = []
 chunk_sources = []
 index = None
 embeddings = None
+_documents_loaded = False
+
+
+def _is_private_or_local_host(hostname):
+    try:
+        address_info = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return True
+
+    for info in address_info:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+        ):
+            return True
+    return False
+
+
+def _is_safe_user_url(url):
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if not parsed.hostname:
+        return False
+    return not _is_private_or_local_host(parsed.hostname)
 
 def load_documents():
-    global docs, chunk_sources, index, embeddings
+    global docs, chunk_sources, index, embeddings, _documents_loaded
     docs.clear()
     chunk_sources.clear()
+
+    os.makedirs(DOC_DIR, exist_ok=True)
 
     for filename in sorted(os.listdir(DOC_DIR)):
         if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
@@ -65,9 +99,16 @@ def load_documents():
             docs.append(para)
             chunk_sources.append(filename)
 
-    index, embeddings = build_index(docs)
+    try:
+        index, embeddings = build_index(docs)
+    except Exception:
+        index, embeddings = None, None
+    _documents_loaded = True
 
-load_documents()
+
+def ensure_documents_loaded(force=False):
+    if force or not _documents_loaded:
+        load_documents()
 
 class HealthView(APIView):
     def get(self, request):
@@ -76,10 +117,16 @@ class HealthView(APIView):
 class AskView(APIView):
     permission_classes = [IsAuthenticated]
     def post(self, request):
+        ensure_documents_loaded()
         question = request.data.get("question")
         if not question or not question.strip():
             return Response(
                 {"error": "Please provide a non-empty 'question' in the request body."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if index is None or index.ntotal == 0:
+            return Response(
+                {"error": "No indexed documents found. Upload documents and run ingestion first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
         top_chunks, top_indices = search(question, docs, index, embeddings, top_k=3)
@@ -167,7 +214,7 @@ class DocumentUploadView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        uploaded_file = request.FILES.get('document')
+        uploaded_file = request.FILES.get('document') or request.FILES.get('file')
         if not uploaded_file:
             return Response(
                 {'error': 'Please upload a file.'},
@@ -183,7 +230,7 @@ class DocumentUploadView(APIView):
         with open(filepath, 'wb') as f:
             for chunk in uploaded_file.chunks():
                 f.write(chunk)
-        load_documents()
+        ensure_documents_loaded(force=True)
         return Response(
             {'message': f'"{uploaded_file.name}" uploaded and indexed successfully.'},
             status=status.HTTP_201_CREATED
@@ -221,7 +268,7 @@ class DeleteDocumentView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         os.remove(filepath)
-        load_documents()
+        ensure_documents_loaded(force=True)
         return Response(
             {'message': f'"{filename}" deleted and index rebuilt.'},
             status=status.HTTP_200_OK
@@ -276,12 +323,12 @@ class ForgotPasswordView(APIView):
                 {'message': 'If an account with this email exits, a reset link has been sent.'},
                 status=status.HTTP_200_OK
             )
-        token = default_token_generator.make_token(user)
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        # Reset token artifacts should be delivered out-of-band (e.g., email),
+        # not returned in API responses.
+        default_token_generator.make_token(user)
+        urlsafe_base64_encode(force_bytes(user.pk))
         return Response({
             'message': 'If an account with this email exits, a reset link has been sent.',
-            'reset_token': token,
-            'uid': uid
             }, status=status.HTTP_200_OK
         )
 
@@ -326,6 +373,7 @@ class SearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        ensure_documents_loaded()
         query = request.data.get('query')
         if not query:
             return Response(
@@ -333,6 +381,13 @@ class SearchView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         top_k = request.data.get('top_k', 3)
+        try:
+            top_k = int(top_k)
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'top_k must be an integer.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         top_chunks, top_indices = search(query, docs, index, embeddings, top_k=top_k)
         sources = [chunk_sources[i] for i in top_indices]
         results = []
@@ -358,8 +413,18 @@ class UploadURLView(APIView):
                 {'error': 'Please provide a URL.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        if not _is_safe_user_url(url):
+            return Response(
+                {'error': 'URL is not allowed.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         try:
-            response = http_requests.get(url, timeout=10)
+            response = http_requests.get(url, timeout=10, allow_redirects=False)
+            if 300 <= response.status_code < 400:
+                return Response(
+                    {'error': 'Redirecting URLs are not allowed.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
             response.raise_for_status()
         except http_requests.RequestException as e:
             return Response(
@@ -386,7 +451,7 @@ class UploadURLView(APIView):
             filepath = os.path.join(DOC_DIR, filename)
             with open(filepath, 'wb') as f:
                 f.write(response.content)
-        load_documents()
+        ensure_documents_loaded(force=True)
         return Response({
             'message': f'"{filename}" downloaded and indexed successfully.',
             'source_url': url,
@@ -397,12 +462,18 @@ class ChatView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        ensure_documents_loaded()
         question = request.data.get('question')
         conversation_id = request.data.get('conversation_id')
 
         if not question or not question.strip():
             return Response(
                 {'error': 'Please provide a non-empty question.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if index is None or index.ntotal == 0:
+            return Response(
+                {'error': 'No indexed documents found. Upload documents and run ingestion first.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -506,7 +577,7 @@ class IngestView(APIView):
 
     def post(self, request):
         try:
-            load_documents()
+            ensure_documents_loaded(force=True)
             return Response({
                 'message': 'Documents ingested successfully.',
                 'total_chunks': len(docs),
@@ -524,6 +595,7 @@ class StatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        ensure_documents_loaded()
         vector_db_ok = index is not None and index.ntotal > 0
         return Response({
             'status': 'ok' if vector_db_ok else 'degraded',
@@ -646,23 +718,22 @@ class MoveDocumentView(APIView):
 
     def put(self, request, filename):
         collection_id = request.data.get('collection_id')
+        collection = None
+        if collection_id:
+            try:
+                collection = Collection.objects.get(id=collection_id, user=request.user)
+            except Collection.DoesNotExist:
+                return Response(
+                    {'error': 'Collection not found.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
         doc, created = Document.objects.get_or_create(
             user = request.user,
             filename = filename,
-            defaults = {'collection_id': collection_id},
+            defaults = {'collection': collection},
         )
         if not created:
-            if collection_id:
-                try:
-                    collection = Collection.objects.get(id=collection_id, user=request.user)
-                except Collection.DoesNotExist:
-                    return Response(
-                        {'error': 'Collection not found.'},
-                        status=status.HTTP_404_NOT_FOUND
-                    )
-                doc.collection = collection
-            else:
-                doc.collection = None
+            doc.collection = collection
             doc.save()
         return Response({
             'message': f'"{filename}" moved successfully.',
@@ -675,6 +746,7 @@ class SearchRerankView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        ensure_documents_loaded()
         query = request.data.get('query')
         if not query or not query.strip():
             return Response(
@@ -683,15 +755,23 @@ class SearchRerankView(APIView):
             )
         initial_k = request.data.get('initial_k', 10)
         final_k = request.data.get('final_k', 3)
+        try:
+            initial_k = int(initial_k)
+            final_k = int(final_k)
+        except (TypeError, ValueError):
+            return Response(
+                {'error': 'initial_k and final_k must be integers.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         top_chunks, top_indices = search(query, docs, index, embeddings, top_k=initial_k)
         reranked = rerank(query, top_chunks, top_k=final_k)
         results = []
-        for chunk, score in reranked:
-            source_idx = top_chunks.index(chunk)
+        for item in reranked:
+            source_idx = item['index']
             results.append({
-                'chunk': chunk,
+                'chunk': item['chunk'],
                 'source': chunk_sources[top_indices[source_idx]],
-                'relevance_score': round(score, 4)
+                'relevance_score': round(item['score'], 4)
             })
         return Response({
             'query': query,
@@ -704,6 +784,7 @@ class SearchSuggestView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        ensure_documents_loaded()
         query = request.query_params.get('q', '').lower().strip()
         if not query:
             return Response(
@@ -766,6 +847,7 @@ class AdminVectorsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        ensure_documents_loaded()
         if not request.user.is_staff:
             return Response(
                 {'error': 'Admin access required.'},

@@ -26,7 +26,7 @@ function Documents() {
         e.preventDefault();
         if (!file) return;
         const formData = new FormData();
-        formData.append('file', file);
+        formData.append('document', file);
         try {
             const res = await axios.post(`${API}/upload/`, formData, {
                 headers: { ...headers, 'Content-Type': 'multipart/form-data' },
@@ -65,7 +65,7 @@ function Documents() {
 
     return (
         <div className="documents-container">
-            <h2>📁 Documents</h2>
+            <h2>Documents</h2>
             {message && <p className="message">{message}</p>}
 
             <div className="upload-section">
@@ -88,10 +88,15 @@ function Documents() {
                 <h3>Your Documents ({documents.length})</h3>
                 {documents.map((doc, i) => (
                     <div key={i} className="doc-item">
-                        <span>📄 {doc.filename} ({doc.size})</span>
-                        <button onClick={() => handleDelete(doc.filename)} className="delete-btn">🗑️</button>
+                        <span>{doc.name} ({(doc.size_bytes / 1024).toFixed(1)} KB)</span>
+                        <button onClick={() => handleDelete(doc.name)} className="delete-btn">Delete</button>
                     </div>
                 ))}
+                {documents.length === 0 && (
+                    <p style={{ fontSize: '0.8125rem', color: '#737380', marginTop: '16px', fontFamily: 'JetBrains Mono' }}>
+                        No documents indexed yet.
+                    </p>
+                )}
             </div>
         </div>
     );

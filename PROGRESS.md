@@ -107,6 +107,15 @@ Last updated: February 28, 2026
 - `frontend/src/components/Documents.js`
 - `npm.cmd run build` now compiles successfully without prior ESLint hook warnings.
 - Remaining frontend console output includes Node/react-scripts deprecation notices (`webpack-dev-server`/`fs.F_OK`) due to legacy CRA tooling on Node 24.
+- Frontend UI styling refresh applied:
+- Updated app theme tokens in `frontend/src/App.css` to a cleaner neutral dark palette (reworked accent, line, destructive, ring, and shadow variables).
+- Refined component visuals in `frontend/src/App.css`:
+- tighter button/input radii and spacing, cleaner nav/sidebar styles, simplified chat/document card look, updated compose/search/settings/admin visual consistency.
+- Updated branding text casing in `frontend/src/App.js`:
+- `DOCUMENT INTELLIGENCE`, `SYSTEM ONLINE`.
+- Updated search mode controls in `frontend/src/components/Search.js` to use explicit `search-pill` styling class hooks.
+- Updated global base styles in `frontend/src/index.css`:
+- Inter import and typography alignment, background/foreground token alignment, and polished scrollbar styling.
 
 - Git push status:
 - PostgreSQL + test/progress changes pushed in commit `9e70787`.

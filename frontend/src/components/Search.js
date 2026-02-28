@@ -44,8 +44,8 @@ function Search() {
         <div className="search-container">
             <h2>Search Documents</h2>
             <div className="search-modes">
-                <button className={mode === 'search' ? 'active' : ''} onClick={() => setMode('search')}>Fast Search</button>
-                <button className={mode === 'rerank' ? 'active' : ''} onClick={() => setMode('rerank')}>Reranked Search</button>
+                <button className={`search-pill ${mode === 'search' ? 'active' : ''}`} onClick={() => setMode('search')}>Fast Search</button>
+                <button className={`search-pill ${mode === 'rerank' ? 'active' : ''}`} onClick={() => setMode('rerank')}>Reranked Search</button>
             </div>
             <form onSubmit={handleSearch}>
                 <input

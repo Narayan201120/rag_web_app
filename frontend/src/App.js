@@ -35,8 +35,8 @@ function App() {
         <div className="App dark-theme">
             {/* Mobile Header Overlay */}
             <div className="mobile-header">
-                <button 
-                    className="hamburger-btn" 
+                <button
+                    className="hamburger-btn"
                     onClick={() => setMobileMenuOpen(true)}
                     aria-label="Open Menu"
                 >
@@ -54,7 +54,7 @@ function App() {
             <nav className={`app-sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
                 <div className="sidebar-brand">
                     <span className="brand-name">RAG</span>
-                    <span className="brand-tag">Document Intelligence</span>
+                    <span className="brand-tag">DOCUMENT INTELLIGENCE</span>
                     <button className="mobile-close-btn" onClick={() => setMobileMenuOpen(false)}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -85,7 +85,7 @@ function App() {
                 <div className="sidebar-footer">
                     <div className="sidebar-status">
                         <span className="status-dot online"></span>
-                        <span>System Online</span>
+                        <span>SYSTEM ONLINE</span>
                     </div>
                     <button className="sidebar-logout" onClick={handleLogout}>
                         Sign Out

@@ -26,6 +26,14 @@ from api.tasks import submit_task, TaskCancelled
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
 
+_current_user_id = None
+
+def _user_doc_dir(user):
+    return os.path.join(DOC_DIR, str(user.id))
+
+
+def _user_doc_dir_from_id(user_id):
+    return os.path.join(DOC_DIR, str(user_id))
 
 def extract_text_from_file(filepath, filename):
     """Extract plain text from a file based on its extension. Returns a single string."""
@@ -84,24 +92,25 @@ def _safe_filename(name, fallback):
     return cleaned or fallback
 
 
-def _resolve_document_path(filename):
+def _resolve_document_path(user, filename):
     safe_name = Path(filename or "").name
     if not safe_name:
         return None, None
-    filepath = os.path.join(DOC_DIR, safe_name)
+    filepath = os.path.join(_user_doc_dir(user), safe_name)
     if not os.path.isfile(filepath):
         return safe_name, None
     return safe_name, filepath
 
 
-def load_documents(progress_callback=None, is_cancelled=None):
+def load_documents(user, progress_callback=None, is_cancelled=None):
     global docs, chunk_sources, index, embeddings, _documents_loaded
     docs.clear()
     chunk_sources.clear()
 
-    os.makedirs(DOC_DIR, exist_ok=True)
+    user_dir = _user_doc_dir(user)
+    os.makedirs(user_dir, exist_ok=True)
     files = [
-        filename for filename in sorted(os.listdir(DOC_DIR))
+        filename for filename in sorted(os.listdir(user_dir))
         if filename.lower().endswith(SUPPORTED_EXTENSIONS)
     ]
     total_files = max(1, len(files))
@@ -109,7 +118,7 @@ def load_documents(progress_callback=None, is_cancelled=None):
     for idx, filename in enumerate(files, start=1):
         if is_cancelled and is_cancelled():
             raise TaskCancelled("Task was cancelled.")
-        filepath = os.path.join(DOC_DIR, filename)
+        filepath = os.path.join(user_dir, filename)
         try:
             content = extract_text_from_file(filepath, filename)
         except Exception:
@@ -137,16 +146,19 @@ def load_documents(progress_callback=None, is_cancelled=None):
     _documents_loaded = True
 
 
-def ensure_documents_loaded(force=False):
-    if force or not _documents_loaded:
-        load_documents()
+def ensure_documents_loaded(user, force=False):
+    global _current_user_id
+    if force or not _documents_loaded or _current_user_id != user.id:
+        load_documents(user)
+        _current_user_id = user.id
 
 
-def _download_url_to_document(url, update=None, is_cancelled=None):
+def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
     clean_url = (url or "").strip()
     if not clean_url:
         raise ValueError("Please provide a valid URL.")
-    os.makedirs(DOC_DIR, exist_ok=True)
+    user_dir = _user_doc_dir_from_id(user_id)
+    os.makedirs(user_dir, exist_ok=True)
 
     if is_cancelled and is_cancelled():
         raise TaskCancelled("Task was cancelled.")
@@ -192,7 +204,7 @@ def _download_url_to_document(url, update=None, is_cancelled=None):
             filename = _safe_filename(f"{title}.txt", "wikipedia_page.txt")
             if not filename.lower().endswith(".txt"):
                 filename = f"{Path(filename).stem}.txt"
-            filepath = os.path.join(DOC_DIR, filename)
+            filepath = os.path.join(user_dir, filename)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(extract)
             return filename
@@ -226,24 +238,25 @@ def _download_url_to_document(url, update=None, is_cancelled=None):
         text = soup.get_text(separator="\n", strip=True)
         if not filename.lower().endswith(".txt"):
             filename = f"{Path(filename).stem}.txt"
-        filepath = os.path.join(DOC_DIR, filename)
+        filepath = os.path.join(user_dir, filename)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(text)
     else:
         if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
             filename = f"{filename}.txt"
-        filepath = os.path.join(DOC_DIR, filename)
+        filepath = os.path.join(user_dir, filename)
         with open(filepath, "wb") as f:
             f.write(response.content)
 
     return filename
 
 
-def _run_reindex_task(update=None, is_cancelled=None):
+def _run_reindex_task(user_id, update=None, is_cancelled=None):
     if update:
         update(50, "Indexing documents...")
 
-    load_documents(progress_callback=update, is_cancelled=is_cancelled)
+    user = User.objects.get(id=user_id)
+    load_documents(user, progress_callback=update, is_cancelled=is_cancelled)
 
     return {
         "message": "Documents ingested successfully.",
@@ -253,21 +266,21 @@ def _run_reindex_task(update=None, is_cancelled=None):
     }
 
 
-def _run_upload_task(filename, update=None, is_cancelled=None):
+def _run_upload_task(user_id, filename, update=None, is_cancelled=None):
     if update:
         update(30, f'Uploaded "{filename}". Starting ingestion...')
-    result = _run_reindex_task(update=update, is_cancelled=is_cancelled)
+    result = _run_reindex_task(user_id, update=update, is_cancelled=is_cancelled)
     result["message"] = f'"{filename}" uploaded and indexed successfully.'
     result["filename"] = filename
     return result
 
 
-def _run_url_ingest_task(url, update=None, is_cancelled=None):
+def _run_url_ingest_task(user_id, url, update=None, is_cancelled=None):
     clean_url = (url or "").strip()
-    filename = _download_url_to_document(clean_url, update=update, is_cancelled=is_cancelled)
+    filename = _download_url_to_document(user_id, clean_url, update=update, is_cancelled=is_cancelled)
     if update:
         update(55, f'Fetched "{filename}". Starting ingestion...')
-    result = _run_reindex_task(update=update, is_cancelled=is_cancelled)
+    result = _run_reindex_task(user_id, update=update, is_cancelled=is_cancelled)
     result["message"] = f'"{filename}" downloaded and indexed successfully.'
     result["filename"] = filename
     result["source_url"] = clean_url
@@ -280,7 +293,7 @@ class HealthView(APIView):
 class AskView(APIView):
     permission_classes = [IsAuthenticated]
     def post(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         question = request.data.get("question")
         if not question or not question.strip():
             return Response(
@@ -377,7 +390,8 @@ class DocumentUploadView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
-        os.makedirs(DOC_DIR, exist_ok=True)
+        user_dir = _user_doc_dir(request.user)
+        os.makedirs(user_dir, exist_ok=True)
         uploaded_file = request.FILES.get('document') or request.FILES.get('file')
         if not uploaded_file:
             return Response(
@@ -390,7 +404,7 @@ class DocumentUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        filepath = os.path.join(DOC_DIR, uploaded_file.name)
+        filepath = os.path.join(user_dir, uploaded_file.name)
         with open(filepath, 'wb') as f:
             for chunk in uploaded_file.chunks():
                 f.write(chunk)
@@ -402,7 +416,7 @@ class DocumentUploadView(APIView):
             progress=5,
             message=f'Queued upload task for "{uploaded_file.name}".',
         )
-        submit_task(task.id, _run_upload_task, uploaded_file.name)
+        submit_task(task.id, _run_upload_task, request.user.id, uploaded_file.name)
 
         return Response(
             {
@@ -418,11 +432,12 @@ class ListDocumentsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        os.makedirs(DOC_DIR, exist_ok=True)
+        user_dir = _user_doc_dir(request.user)
+        os.makedirs(user_dir, exist_ok=True)
         files = []
-        for filename in os.listdir(DOC_DIR):
+        for filename in os.listdir(user_dir):
             if filename.lower().endswith(SUPPORTED_EXTENSIONS):
-                filepath = os.path.join(DOC_DIR, filename)
+                filepath = os.path.join(user_dir, filename)
                 size_bytes = os.path.getsize(filepath)
                 files.append({
                     'name': filename,
@@ -439,7 +454,7 @@ class DeleteDocumentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, filename):
-        safe_name, filepath = _resolve_document_path(filename)
+        safe_name, filepath = _resolve_document_path(request.user, filename)
         if not filepath:
             return Response(
                 {'error': f'Document {safe_name or filename} not found!'},
@@ -467,14 +482,14 @@ class DeleteDocumentView(APIView):
         )
 
     def delete(self, request, filename):
-        safe_name, filepath = _resolve_document_path(filename)
+        safe_name, filepath = _resolve_document_path(request.user, filename)
         if not filepath:
             return Response(
                 {'error': f'Document {safe_name or filename} not found!'},
                 status=status.HTTP_404_NOT_FOUND
             )
         os.remove(filepath)
-        ensure_documents_loaded(force=True)
+        ensure_documents_loaded(request.user, force=True)
         return Response(
             {'message': f'"{safe_name}" deleted and index rebuilt.'},
             status=status.HTTP_200_OK
@@ -579,7 +594,7 @@ class SearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         query = request.data.get('query')
         if not query:
             return Response(
@@ -632,7 +647,7 @@ class UploadURLView(APIView):
             progress=5,
             message="Queued URL ingestion task.",
         )
-        submit_task(task.id, _run_url_ingest_task, url)
+        submit_task(task.id, _run_url_ingest_task, request.user.id, url)
 
         return Response({
             "task_id": str(task.id),
@@ -645,7 +660,7 @@ class ChatView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         question = request.data.get('question')
         conversation_id = request.data.get('conversation_id')
 
@@ -766,7 +781,7 @@ class IngestView(APIView):
             progress=5,
             message="Queued ingestion task.",
         )
-        submit_task(task.id, _run_reindex_task)
+        submit_task(task.id, _run_reindex_task, request.user.id)
         return Response(
             {
                 "task_id": str(task.id),
@@ -781,7 +796,7 @@ class StatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         vector_db_ok = index is not None and index.ntotal > 0
         return Response({
             'status': 'ok' if vector_db_ok else 'degraded',
@@ -932,7 +947,7 @@ class SearchRerankView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         query = request.data.get('query')
         if not query or not query.strip():
             return Response(
@@ -970,7 +985,7 @@ class SearchSuggestView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         query = request.query_params.get('q', '').lower().strip()
         if not query:
             return Response(
@@ -1032,7 +1047,7 @@ class AdminVectorsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_documents_loaded()
+        ensure_documents_loaded(request.user)
         if not request.user.is_staff:
             return Response(
                 {'error': 'Admin access required.'},

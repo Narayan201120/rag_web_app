@@ -1,4 +1,4 @@
-from django.test import TestCase
+﻿from django.test import TestCase
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import default_token_generator
@@ -58,6 +58,21 @@ class DocumentIsolationTests(TestCase):
         names = {item["name"] for item in response.json()["documents"]}
         self.assertIn("b_only.txt", names)
         self.assertNotIn("a_only.txt", names)
+
+    def test_documents_list_prefers_markdown_over_text_for_same_stem(self):
+        user_b_dir = os.path.join(api_views.DOC_DIR, str(self.user_b.id))
+        with open(os.path.join(user_b_dir, "topic.txt"), "w", encoding="utf-8") as f:
+            f.write("plain text")
+        with open(os.path.join(user_b_dir, "topic.md"), "w", encoding="utf-8") as f:
+            f.write("# markdown")
+
+        self.api_client.force_authenticate(user=self.user_b)
+        response = self.api_client.get("/api/documents/")
+
+        self.assertEqual(response.status_code, 200)
+        names = {item["name"] for item in response.json()["documents"]}
+        self.assertIn("topic.md", names)
+        self.assertNotIn("topic.txt", names)
 
 
 class EndpointSmokeTests(TestCase):
@@ -607,3 +622,58 @@ class IngestAndCollectionEndpointSmokeTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class URLParsingHelperTests(TestCase):
+    def test_fix_common_mojibake_repairs_utf8_text(self):
+        expected = "p(C_{k}\u2223x_{1})"
+        broken = expected.encode("utf-8").decode("latin-1")
+        repaired = api_views._fix_common_mojibake(broken)
+        self.assertEqual(repaired, expected)
+
+    def test_fix_common_mojibake_replaces_common_word_level_artifacts(self):
+        broken = "Uses tfâ€“idf and expectationâ€“maximization."
+        repaired = api_views._fix_common_mojibake(broken)
+        self.assertEqual(repaired, "Uses tf-idf and expectation-maximization.")
+
+    def test_extract_readable_text_from_html_converts_math(self):
+        html = """
+        <html>
+          <body>
+            <p>Probabilistic model</p>
+            <math alttext="{\\displaystyle p(C_{k}\\mid x_{1},\\ldots ,x_{n})}"></math>
+            <p>End section.</p>
+          </body>
+        </html>
+        """
+        text = api_views._extract_readable_text_from_html(html)
+        self.assertIn("Probabilistic model", text)
+        self.assertIn("p(C_{k}\\mid x_{1},\\ldots ,x_{n})", text)
+        self.assertIn("End section.", text)
+
+    def test_clean_extracted_text_removes_displaystyle_artifacts(self):
+        raw = "Intro line\n{\\displaystyle p(C_{k}\\mid x)}\nW\nq\nConclusion line"
+        cleaned = api_views._clean_extracted_text(raw)
+
+        self.assertIn("Intro line", cleaned)
+        self.assertIn("Conclusion line", cleaned)
+        self.assertIn("$p(C_{k}\\mid x)$", cleaned)
+        self.assertNotIn("\nW\n", f"\n{cleaned}\n")
+
+    def test_clean_extracted_text_removes_mojibake_symbol_lines(self):
+        raw = "Heading\nâˆ£\nâ€¦\nBody line with Ã— symbol"
+        cleaned = api_views._clean_extracted_text(raw)
+
+        self.assertIn("Heading", cleaned)
+        self.assertIn("Body line with × symbol", cleaned)
+        self.assertNotIn("âˆ£", cleaned)
+        self.assertNotIn("â€¦", cleaned)
+
+    def test_extract_markdown_from_html_keeps_wiki_math_alt_as_latex(self):
+        html = """
+        <div id="mw-content-text">
+          <p>The function <span class="mwe-math-element"><img alt="{\\displaystyle f_{c}(z)=z^{2}+c}"></span> is iterated.</p>
+        </div>
+        """
+        md = api_views._extract_markdown_from_html(html)
+        self.assertIn("$f_{c}(z)=z^{2}+c$", md)

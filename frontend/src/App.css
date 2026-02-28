@@ -761,6 +761,43 @@ button {
   font-size: 1rem;
 }
 
+.md-preview {
+  display: grid;
+  gap: 10px;
+  line-height: 1.55;
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", Times, serif;
+  word-break: break-word;
+}
+
+.md-preview h1,
+.md-preview h2,
+.md-preview h3,
+.md-preview h4,
+.md-preview h5,
+.md-preview h6 {
+  margin: 0;
+}
+
+.md-preview h1 { font-size: 1.5rem; }
+.md-preview h2 { font-size: 1.3rem; }
+.md-preview h3 { font-size: 1.15rem; }
+.md-preview p { margin: 0; }
+
+.md-preview .md-list {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.math-inline {
+  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
+  font-size: 0.95em;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 5px;
+}
+
 .preview-note {
   margin: 10px 0 0;
   color: var(--muted);

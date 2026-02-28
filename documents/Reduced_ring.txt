@@ -1,264 +1,49 @@
-In ring theory, a branch of mathematics, a ring is called a reduced ring if it has no non-zero nilpotent elements.  Equivalently, a ring is reduced if it has no non-zero elements with square zero, that is, x2 = 0 implies x = 0. A commutative algebra over a commutative ring is called a reduced algebra if its underlying ring is reduced.
+In ring theory, a branch of mathematics, a ring is called a reduced ring if it has no non-zero nilpotent elements. Equivalently, a ring is reduced if it has no non-zero elements with square zero, that is, x2 = 0 implies x = 0. A commutative algebra over a commutative ring is called a reduced algebra if its underlying ring is reduced.
 The nilpotent elements of a commutative ring R form an ideal of R, called the nilradical of R; therefore a commutative ring is reduced if and only if its nilradical is zero. Moreover, a commutative ring is reduced if and only if the only element contained in all prime ideals is zero.
 A quotient ring R/I is reduced if and only if I is a radical ideal.
-Let 
-  
-    
-      
-        
-          
-            
-              N
-            
-          
-          
-            R
-          
-        
-      
-    
-    {\displaystyle {\mathfrak {N}}_{R}}
-  
- denote the nilradical of a commutative ring 
-  
-    
-      
-        R
-      
-    
-    {\displaystyle R}
-  
-. There is a functor 
-  
-    
-      
-        R
-        ↦
-        R
-        
-          /
-        
-        
-          
-            
-              N
-            
-          
-          
-            R
-          
-        
-      
-    
-    {\displaystyle R\mapsto R/{\mathfrak {N}}_{R}}
-  
- of the category of commutative rings 
-  
-    
-      
-        
-          
-            CRing
-          
-        
-      
-    
-    {\displaystyle {\textsf {CRing}}}
-  
- into the category of reduced rings 
-  
-    
-      
-        
-          
-            Red
-          
-        
-      
-    
-    {\displaystyle {\textsf {Red}}}
-  
- and it is left adjoint to the inclusion functor 
-  
-    
-      
-        I
-      
-    
-    {\displaystyle I}
-  
- of 
-  
-    
-      
-        
-          
-            Red
-          
-        
-      
-    
-    {\displaystyle {\textsf {Red}}}
-  
- into 
-  
-    
-      
-        
-          
-            CRing
-          
-        
-      
-    
-    {\displaystyle {\textsf {CRing}}}
-  
-, making 
-  
-    
-      
-        
-          
-            Red
-          
-        
-      
-    
-    {\displaystyle {\textsf {Red}}}
-  
- a reflective subcategory of 
-  
-    
-      
-        
-          
-            CRing
-          
-        
-      
-    
-    {\displaystyle {\textsf {CRing}}}
-  
-. The natural bijection 
-  
-    
-      
-        
-          
-            Hom
-          
-          
-            
-              Red
-            
-          
-        
-        (
-        R
-        
-          /
-        
-        
-          
-            
-              N
-            
-          
-          
-            R
-          
-        
-        ,
-        S
-        )
-        ≅
-        
-          
-            Hom
-          
-          
-            
-              CRing
-            
-          
-        
-        (
-        R
-        ,
-        I
-        (
-        S
-        )
-        )
-      
-    
-    {\displaystyle {\text{Hom}}_{\textsf {Red}}(R/{\mathfrak {N}}_{R},S)\cong {\text{Hom}}_{\textsf {CRing}}(R,I(S))}
-  
- is induced from the universal property of quotient rings.
+Let
+denote the nilradical of a commutative ring
+. There is a functor
+↦
+of the category of commutative rings
+CRing
+into the category of reduced rings
+Red
+and it is left adjoint to the inclusion functor
+of
+Red
+into
+CRing
+, making
+Red
+a reflective subcategory of
+CRing
+. The natural bijection
+Hom
+Red
+≅
+Hom
+CRing
+is induced from the universal property of quotient rings.
 Let D be the set of all zero-divisors in a reduced ring R. Then D is the union of all minimal prime ideals.
-Over a Noetherian ring R, we say a finitely generated module M has locally constant rank if 
-  
-    
-      
-        
-          
-            p
-          
-        
-        ↦
-        
-          dim
-          
-            k
-            (
-            
-              
-                p
-              
-            
-            )
-          
-        
-        ⁡
-        (
-        M
-        ⊗
-        k
-        (
-        
-          
-            p
-          
-        
-        )
-        )
-      
-    
-    {\displaystyle {\mathfrak {p}}\mapsto \operatorname {dim} _{k({\mathfrak {p}})}(M\otimes k({\mathfrak {p}}))}
-  
- is a locally constant (or equivalently continuous) function on Spec R. Then R is reduced if and only if every finitely generated module of locally constant rank is projective.
-
-
+Over a Noetherian ring R, we say a finitely generated module M has locally constant rank if
+↦
+dim
+⁡
+⊗
+is a locally constant (or equivalently continuous) function on Spec R. Then R is reduced if and only if every finitely generated module of locally constant rank is projective.
 Examples and non-examples
 Subrings, products, and localizations of reduced rings are again reduced rings.
 The ring of integers Z is a reduced ring. Every field and every polynomial ring over a field (in arbitrarily many variables) is a reduced ring.
-More generally, every integral domain is a reduced ring since a nilpotent element is a fortiori a zero-divisor. On the other hand, not every reduced ring is an integral domain; for example, the ring Z[x, y]/(xy) contains x + (xy) and y + (xy) as zero-divisors, but no non-zero nilpotent elements. As another example, the ring Z × Z contains (1, 0) and (0, 1) as zero-divisors, but contains no non-zero nilpotent elements.
-The ring Z/6Z is reduced, however Z/4Z is not reduced: the class 2 + 4Z is nilpotent.  In general, Z/nZ is reduced if and only if n = 0 or n is square-free.
+More generally, every integral domain is a reduced ring since a nilpotent element is a fortiori a zero-divisor. On the other hand, not every reduced ring is an integral domain; for example, the ring Z[x, y]/(xy) contains x + (xy) and y + (xy) as zero-divisors, but no non-zero nilpotent elements. As another example, the ring Z × Z contains (1, 0) and (0, 1) as zero-divisors, but contains no non-zero nilpotent elements.
+The ring Z/6Z is reduced, however Z/4Z is not reduced: the class 2 + 4Z is nilpotent. In general, Z/nZ is reduced if and only if n = 0 or n is square-free.
 If R is a commutative ring and N is its nilradical, then the quotient ring R/N is reduced.
 A commutative ring R of prime characteristic p is reduced if and only if its Frobenius endomorphism is injective (cf. Perfect field.)
-
-
 Generalizations
 Reduced rings play an elementary role in algebraic geometry, where this concept is generalized to the notion of a reduced scheme.
-
-
 See also
 Total quotient ring § The total ring of fractions of a reduced ring
-
-
 Notes
-
-
 References
 N. Bourbaki, Commutative Algebra, Hermann Paris 1972, Chap. II, § 2.7
 N. Bourbaki, Algebra, Springer 1990, Chap. V, § 6.7

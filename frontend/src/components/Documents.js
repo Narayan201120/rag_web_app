@@ -3,6 +3,69 @@ import axios from 'axios';
 
 const API = 'http://127.0.0.1:8000/api';
 
+function renderMarkdownContent(content) {
+    const lines = String(content || '').split('\n');
+    const nodes = [];
+    let listBuffer = [];
+    let listType = null;
+
+    const flushList = () => {
+        if (!listBuffer.length) return;
+        const ListTag = listType === 'ol' ? 'ol' : 'ul';
+        nodes.push(
+            <ListTag key={`list-${nodes.length}`} className="md-list">
+                {listBuffer.map((item, i) => <li key={i}>{item}</li>)}
+            </ListTag>
+        );
+        listBuffer = [];
+        listType = null;
+    };
+
+    lines.forEach((raw, i) => {
+        const line = raw.trim();
+        if (!line) {
+            flushList();
+            return;
+        }
+
+        const heading = line.match(/^(#{1,6})\s+(.*)$/);
+        if (heading) {
+            flushList();
+            const level = heading[1].length;
+            const text = heading[2];
+            if (level === 1) nodes.push(<h1 key={`h1-${i}`}>{text}</h1>);
+            else if (level === 2) nodes.push(<h2 key={`h2-${i}`}>{text}</h2>);
+            else if (level === 3) nodes.push(<h3 key={`h3-${i}`}>{text}</h3>);
+            else if (level === 4) nodes.push(<h4 key={`h4-${i}`}>{text}</h4>);
+            else if (level === 5) nodes.push(<h5 key={`h5-${i}`}>{text}</h5>);
+            else nodes.push(<h6 key={`h6-${i}`}>{text}</h6>);
+            return;
+        }
+
+        const ordered = line.match(/^\d+\.\s+(.*)$/);
+        if (ordered) {
+            if (listType && listType !== 'ol') flushList();
+            listType = 'ol';
+            listBuffer.push(ordered[1]);
+            return;
+        }
+
+        const unordered = line.match(/^[-*]\s+(.*)$/);
+        if (unordered) {
+            if (listType && listType !== 'ul') flushList();
+            listType = 'ul';
+            listBuffer.push(unordered[1]);
+            return;
+        }
+
+        flushList();
+        nodes.push(<p key={`p-${i}`}>{line}</p>);
+    });
+
+    flushList();
+    return nodes;
+}
+
 function Documents() {
     const [documents, setDocuments] = useState([]);
     const [file, setFile] = useState(null);
@@ -12,6 +75,31 @@ function Documents() {
     const [previewDoc, setPreviewDoc] = useState(null);
     const [previewLoading, setPreviewLoading] = useState(false);
     const pollRef = useRef(null);
+    const previewBodyRef = useRef(null);
+
+    useEffect(() => {
+        if (window.MathJax) return;
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+            },
+            svg: { fontCache: 'global' },
+        };
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
+        script.async = true;
+        document.head.appendChild(script);
+    }, []);
+
+    useEffect(() => {
+        if (!previewDoc || previewDoc.extension !== '.md') return;
+        if (!window.MathJax || !previewBodyRef.current) return;
+        if (window.MathJax.typesetPromise) {
+            window.MathJax.typesetClear?.([previewBodyRef.current]);
+            window.MathJax.typesetPromise([previewBodyRef.current]).catch(() => {});
+        }
+    }, [previewDoc]);
 
     const authHeaders = useCallback(() => {
         const token = localStorage.getItem('access');
@@ -236,7 +324,13 @@ function Documents() {
                                 <p>Loading document content...</p>
                             ) : (
                                 <>
-                                    <pre>{previewDoc?.content || 'No text extracted from this document.'}</pre>
+                                    {previewDoc?.extension === '.md' ? (
+                                        <div className="md-preview" ref={previewBodyRef}>
+                                            {renderMarkdownContent(previewDoc?.content || '')}
+                                        </div>
+                                    ) : (
+                                        <pre>{previewDoc?.content || 'No text extracted from this document.'}</pre>
+                                    )}
                                     {previewDoc?.truncated && (
                                         <p className="preview-note">
                                             Showing first 20,000 characters.

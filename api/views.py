@@ -1,7 +1,9 @@
-import requests as http_requests
+﻿import requests as http_requests
 import os
 import socket
 import ipaddress
+import re
+import html as html_lib
 from urllib.parse import urlparse, unquote
 from pathlib import Path
 from django.conf import settings
@@ -104,6 +106,243 @@ def _resolve_document_path(user, filename):
     return safe_name, filepath
 
 
+def _fix_common_mojibake(text):
+    if not text:
+        return text
+
+    def _score(value):
+        # Lower is better: replacement chars + common mojibake fragments.
+        return (
+            value.count("\ufffd")
+            + value.count("Ã")
+            + value.count("â")
+            + value.count("Â")
+            + value.count("Ð")
+            + value.count("Ñ")
+        )
+
+    current = text
+    for _ in range(3):
+        candidates = [current]
+        for src_enc in ("latin-1", "cp1252"):
+            try:
+                candidates.append(current.encode(src_enc).decode("utf-8"))
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                continue
+        best = min(candidates, key=_score)
+        if _score(best) >= _score(current):
+            break
+        current = best
+
+    fallback_replacements = {
+        "â€“": "-",
+        "â€”": "-",
+        "–": "-",
+        "—": "-",
+        "â€˜": "'",
+        "â€™": "'",
+        "â€œ": '"',
+        "â€": '"',
+        "â€¦": "...",
+        "âˆ’": "-",
+        "âˆ£": "|",
+        "â‰…": "~",
+        "Ã—": "x",
+    }
+    for bad, good in fallback_replacements.items():
+        current = current.replace(bad, good)
+    return current
+
+def _decode_http_response_text(response):
+    candidates = []
+    tried = set()
+    for encoding in (response.encoding, getattr(response, "apparent_encoding", None), "utf-8"):
+        if not encoding or encoding in tried:
+            continue
+        tried.add(encoding)
+        try:
+            candidates.append(response.content.decode(encoding, errors="replace"))
+        except LookupError:
+            continue
+    if not candidates:
+        candidates.append(response.text)
+
+    def _score(candidate):
+        return (
+            candidate.count("\ufffd")
+            + candidate.count("Ã")
+            + candidate.count("â")
+            + candidate.count("Â")
+        )
+
+    best = min(candidates, key=_score)
+    return _fix_common_mojibake(best)
+
+
+def _normalize_formula_text(formula):
+    if not formula:
+        return ""
+    normalized = formula.strip()
+    if normalized.startswith("{\\displaystyle"):
+        normalized = normalized[len("{\\displaystyle"):].strip()
+        if normalized.endswith("}"):
+            normalized = normalized[:-1].strip()
+
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _clean_extracted_text(text):
+    if not text:
+        return ""
+
+    text = html_lib.unescape(_fix_common_mojibake(text))
+    cleaned_lines = []
+    for raw_line in text.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip()
+        if not line:
+            continue
+        # Convert Wikipedia math fallback blocks to inline LaTeX.
+        if "{\\displaystyle" in line:
+            start = line.find("{\\displaystyle")
+            prefix = line[:start].strip()
+            formula = line[start + len("{\\displaystyle"):].strip()
+            if formula.endswith("}"):
+                formula = formula[:-1].strip()
+            latex = _normalize_formula_text(formula)
+            line = f"{prefix} ${latex}$".strip() if prefix else f"${latex}$"
+        if any(fragment in line for fragment in ("Ã", "â", "Â")) and len(line) <= 12:
+            continue
+        if re.match(r"^[\[\]\(\)\{\}_^=+\-*/\\|,.;:~`'\"<>]+$", line):
+            continue
+        if not re.search(r"[A-Za-z0-9]", line):
+            continue
+        # Drop one-character alphabetic noise from split formula glyph runs.
+        if re.match(r"^[A-Za-z0-9]$", line):
+            continue
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
+
+
+def _extract_readable_text_from_html(html_text):
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    # Drop non-content blocks before extracting text.
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "svg"]):
+        tag.decompose()
+    for tag in soup.select(".reference, .mw-editsection, .navbox, .reflist, .toc"):
+        tag.decompose()
+    for tag in soup.select(".mwe-math-mathml-a11y, .katex-mathml"):
+        tag.decompose()
+
+    # Convert math to inline readable text before generic get_text().
+    for math in soup.find_all("math"):
+        formula = ""
+        annotation = math.find("annotation", attrs={"encoding": "application/x-tex"})
+        if annotation:
+            formula = annotation.get_text(" ", strip=True)
+        if not formula:
+            formula = math.get("alttext", "")
+        if not formula:
+            formula = math.get_text(" ", strip=True)
+        formula = _normalize_formula_text(formula)
+        if formula:
+            math.replace_with(f" {formula} ")
+        else:
+            math.decompose()
+
+    for img in soup.find_all("img"):
+        alt = img.get("alt", "").strip()
+        if not alt:
+            continue
+        if "\\displaystyle" in alt or "\\frac" in alt or "\\sum" in alt:
+            formula = _normalize_formula_text(alt)
+            if formula:
+                img.replace_with(f" {formula} ")
+
+    text = soup.get_text(separator="\n", strip=True)
+    return _clean_extracted_text(text)
+
+
+def _extract_markdown_from_html(html_text):
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "svg"]):
+        tag.decompose()
+    for tag in soup.select(".reference, .mw-editsection, .navbox, .reflist, .toc"):
+        tag.decompose()
+    for tag in soup.select(".mwe-math-mathml-a11y, .katex-mathml"):
+        tag.decompose()
+
+    for math in soup.find_all("math"):
+        formula = ""
+        annotation = math.find("annotation", attrs={"encoding": "application/x-tex"})
+        if annotation:
+            formula = annotation.get_text(" ", strip=True)
+        if not formula:
+            formula = math.get("alttext", "")
+        if not formula:
+            formula = math.get_text(" ", strip=True)
+        formula = _normalize_formula_text(formula)
+        if formula:
+            math.replace_with(f" ${formula}$ ")
+        else:
+            math.decompose()
+
+    for img in soup.find_all("img"):
+        alt = img.get("alt", "").strip()
+        if not alt:
+            continue
+        if "\\displaystyle" in alt or "\\frac" in alt or "\\sum" in alt:
+            formula = _normalize_formula_text(alt)
+            if formula:
+                img.replace_with(f" ${formula}$ ")
+
+    root = (
+        soup.find("article")
+        or soup.find(id="mw-content-text")
+        or soup.find("main")
+        or soup.body
+        or soup
+    )
+    block_tags = ("h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "pre")
+    blocks = []
+
+    for node in root.find_all(block_tags):
+        if node.name == "li":
+            parent = node.find_parent(["ul", "ol"])
+            if not parent:
+                continue
+        text = _clean_extracted_text(node.get_text(" ", strip=True))
+        if not text:
+            continue
+
+        if node.name.startswith("h"):
+            level = int(node.name[1])
+            blocks.append(f'{"#" * max(1, min(6, level))} {text}')
+        elif node.name == "li":
+            parent = node.find_parent(["ul", "ol"])
+            prefix = "1. " if parent and parent.name == "ol" else "- "
+            blocks.append(f"{prefix}{text}")
+        elif node.name == "blockquote":
+            blocks.append(f"> {text}")
+        elif node.name == "pre":
+            blocks.append(f"```\n{text}\n```")
+        else:
+            blocks.append(text)
+
+    cleaned_blocks = []
+    for block in blocks:
+        if cleaned_blocks and cleaned_blocks[-1] == block:
+            continue
+        cleaned_blocks.append(block)
+
+    if cleaned_blocks:
+        return "\n\n".join(cleaned_blocks)
+    return _extract_readable_text_from_html(html_text)
+
+
 def load_documents(user, progress_callback=None, is_cancelled=None):
     global docs, chunk_sources, index, embeddings, _documents_loaded
     docs.clear()
@@ -170,42 +409,66 @@ def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
 
     parsed = urlparse(clean_url)
     # Wikipedia often blocks generic HTML scraping with 403.
-    # Use MediaWiki's API for /wiki/* URLs to fetch plain text safely.
+    # Use MediaWiki's parse API for /wiki/* URLs to fetch article HTML safely.
     if parsed.hostname and parsed.hostname.endswith("wikipedia.org") and parsed.path.startswith("/wiki/"):
         raw_title = parsed.path.split("/wiki/", 1)[1]
         title = unquote(raw_title).strip()
         if title:
             if update:
-                update(25, "Fetching Wikipedia page text...")
+                update(25, "Fetching Wikipedia page content...")
             wiki_api_url = f"{parsed.scheme}://{parsed.netloc}/w/api.php"
-            wiki_response = http_requests.get(
-                wiki_api_url,
-                timeout=10,
-                params={
-                    "action": "query",
-                    "format": "json",
-                    "prop": "extracts",
-                    "explaintext": "1",
-                    "exsectionformat": "plain",
-                    "redirects": "1",
-                    "titles": title.replace("_", " "),
-                },
-                headers={
-                    "User-Agent": "rag-web-app/1.0",
-                    "Accept": "application/json",
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
-            )
-            wiki_response.raise_for_status()
-            wiki_data = wiki_response.json()
-            pages = (wiki_data.get("query") or {}).get("pages") or {}
-            page = next(iter(pages.values()), {})
-            extract = (page.get("extract") or "").strip()
+            try:
+                wiki_response = http_requests.get(
+                    wiki_api_url,
+                    timeout=10,
+                    params={
+                        "action": "parse",
+                        "format": "json",
+                        "prop": "text",
+                        "redirects": "1",
+                        "page": title.replace("_", " "),
+                    },
+                    headers={
+                        "User-Agent": "rag-web-app/1.0",
+                        "Accept": "application/json",
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                )
+                wiki_response.raise_for_status()
+                wiki_data = wiki_response.json()
+                html_fragment = ((wiki_data.get("parse") or {}).get("text") or {}).get("*", "")
+                extract = _extract_markdown_from_html(html_fragment)
+            except Exception:
+                # Fallback to plain extract endpoint if parse API is unavailable.
+                fallback_response = http_requests.get(
+                    wiki_api_url,
+                    timeout=10,
+                    params={
+                        "action": "query",
+                        "format": "json",
+                        "prop": "extracts",
+                        "explaintext": "1",
+                        "exsectionformat": "plain",
+                        "redirects": "1",
+                        "titles": title.replace("_", " "),
+                    },
+                    headers={
+                        "User-Agent": "rag-web-app/1.0",
+                        "Accept": "application/json",
+                        "Accept-Language": "en-US,en;q=0.9",
+                    },
+                )
+                fallback_response.raise_for_status()
+                fallback_data = fallback_response.json()
+                pages = (fallback_data.get("query") or {}).get("pages") or {}
+                page = next(iter(pages.values()), {})
+                extract = _clean_extracted_text((page.get("extract") or "").strip())
+
             if not extract:
-                raise ValueError("Wikipedia page text could not be fetched for this URL.")
-            filename = _safe_filename(f"{title}.txt", "wikipedia_page.txt")
-            if not filename.lower().endswith(".txt"):
-                filename = f"{Path(filename).stem}.txt"
+                raise ValueError("Wikipedia page content could not be fetched for this URL.")
+            filename = _safe_filename(f"{title}.md", "wikipedia_page.md")
+            if not filename.lower().endswith(".md"):
+                filename = f"{Path(filename).stem}.md"
             filepath = os.path.join(user_dir, filename)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(extract)
@@ -234,12 +497,10 @@ def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
     if "text/html" in content_type:
         if update:
             update(35, "Parsing HTML content...")
-        soup = BeautifulSoup(response.text, "html.parser")
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            tag.decompose()
-        text = soup.get_text(separator="\n", strip=True)
-        if not filename.lower().endswith(".txt"):
-            filename = f"{Path(filename).stem}.txt"
+        html_text = _decode_http_response_text(response)
+        text = _extract_markdown_from_html(html_text)
+        if not filename.lower().endswith(".md"):
+            filename = f"{Path(filename).stem}.md"
         filepath = os.path.join(user_dir, filename)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(text)
@@ -457,8 +718,21 @@ class ListDocumentsView(APIView):
     def get(self, request):
         user_dir = _user_doc_dir(request.user)
         os.makedirs(user_dir, exist_ok=True)
-        files = []
+        extension_priority = {".md": 3, ".docx": 2, ".pdf": 1, ".txt": 0}
+        by_stem = {}
         for filename in os.listdir(user_dir):
+            if filename.lower().endswith(SUPPORTED_EXTENSIONS):
+                stem = Path(filename).stem
+                ext = Path(filename).suffix.lower()
+                prev = by_stem.get(stem)
+                if prev:
+                    prev_ext = Path(prev).suffix.lower()
+                    if extension_priority.get(ext, -1) <= extension_priority.get(prev_ext, -1):
+                        continue
+                by_stem[stem] = filename
+
+        files = []
+        for filename in sorted(by_stem.values()):
             if filename.lower().endswith(SUPPORTED_EXTENSIONS):
                 filepath = os.path.join(user_dir, filename)
                 size_bytes = os.path.getsize(filepath)
@@ -1305,3 +1579,6 @@ class TaskCancelView(APIView):
             {'message': 'Task cancelled successfully.'},
             status=status.HTTP_200_OK
         )
+
+
+

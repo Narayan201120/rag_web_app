@@ -78,6 +78,12 @@ Last updated: February 28, 2026
 - document upload
 - ingestion/indexing
 - chat answer generation with source citation
+- Improved URL ingestion output format for web pages:
+- URL-fetched HTML/Wikipedia pages now saved as Markdown (`.md`) instead of plain `.txt`.
+- Added markdown-focused HTML extraction path with section/list structure preservation and inline LaTeX retention where available.
+- Document listing now prefers `.md` over `.txt` when both exist for the same stem.
+- Frontend document preview now detects `.md` and renders markdown content in the Open modal.
+- Regenerated and stored markdown samples under `documents/2/` (including `Mandelbrot_set.md`).
 
 ## Validation Work Done
 
@@ -120,15 +126,23 @@ Last updated: February 28, 2026
 - Git push status:
 - PostgreSQL + test/progress changes pushed in commit `9e70787`.
 - Document isolation fix pushed in commit `c097bb5`.
+- Latest local verification after markdown/formula parsing updates:
+- Backend tests: `venv\Scripts\python.exe manage.py test` -> `Ran 46 tests`, `OK`.
+- Frontend tests: `npm.cmd run test:ci` -> `1 passed`.
+- Frontend build: `npm.cmd run build` compiles successfully.
 
 ## Current Known Blockers
 
 - No backend dependency blocker in venv for current test command.
 - Backend test coverage remains partial but now includes smoke coverage for auth/account/password/search/task, chat history/export, feedback/citations, and admin usage/vector endpoints.
+- Math formula rendering in document preview remains an open UX issue:
+- Markdown files currently contain LaTeX syntax (e.g., `$f_{c}(z)=z^{2}+c$`) but formulas are still shown as raw source in preview for some users/environments.
+- Further frontend math rendering integration is needed (e.g., MathJax/KaTeX render pass in the preview modal).
 
 ## What Remains Next
 
-- No pending items currently tracked in this progress log.
+- Resolve markdown formula rendering in the document Open modal so LaTeX appears visually typeset rather than raw.
+- Optionally clean up legacy `.txt` URL-ingested artifacts after equivalent `.md` files are verified.
 
 ## Notes For New Sessions
 

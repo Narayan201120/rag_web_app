@@ -95,11 +95,17 @@ CORS_ALLOWED_ORIGINS = [
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if DATABASE_URL:
+    db_ssl_require_env = os.getenv("DJANGO_DB_SSL_REQUIRE", "").strip().lower()
+    if db_ssl_require_env:
+        db_ssl_require = db_ssl_require_env in ("1", "true", "yes")
+    else:
+        db_ssl_require = not DEBUG
+
     DATABASES = {
         "default": dj_database_url.parse(
             DATABASE_URL,
             conn_max_age=600,
-            ssl_require=not DEBUG,
+            ssl_require=db_ssl_require,
         )
     }
 else:

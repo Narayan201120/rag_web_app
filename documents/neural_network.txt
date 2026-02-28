@@ -1,0 +1,65 @@
+A neural network is a computational model inspired by the biological structure of the human brain. It consists of interconnected layers of "neurons" that process data, identify patterns, and make decisions.
+
+Here is a detailed breakdown of how they function, structured for a text file.
+
+---
+
+## 1. Core Architecture
+
+A standard neural network is organized into three distinct types of layers:
+
+* **Input Layer:** The entry point for data. Each node in this layer represents a specific feature of the input (e.g., a single pixel in an image or a value in a spreadsheet).
+* **Hidden Layers:** These layers sit between the input and output. This is where the "learning" happens. A network can have one hidden layer (Simple Neural Network) or hundreds (Deep Learning).
+* **Output Layer:** The final layer that produces the prediction. For example, in a binary classifier, it might have one node representing a "Yes" or "No" probability.
+
+---
+
+## 2. The Anatomy of a Neuron
+
+Each individual node (neuron) performs a specific mathematical operation:
+
+1. **Weights ($w$):** Every input connection has a weight that determines its importance.
+2. **Bias ($b$):** An additional trainable parameter that allows the activation function to shift up or down, helping the model fit the data better.
+3. **Summation:** The neuron calculates the weighted sum of its inputs:
+
+$$Z = \sum (input \cdot w) + b$$
+
+
+4. **Activation Function:** The result $Z$ is passed through a non-linear function (like ReLU, Sigmoid, or Tanh). This allows the network to learn complex, non-linear relationships rather than just simple linear correlations.
+
+---
+
+## 3. How the Network Learns
+
+The learning process is an iterative cycle consisting of two main phases:
+
+### Phase A: Forward Propagation
+
+Data flows from the input layer through the hidden layers to the output layer. The network makes a "guess" based on its current weights and biases.
+
+### Phase B: Backward Propagation (The Feedback Loop)
+
+1. **Loss Function:** The network compares its prediction to the actual target value using a "Loss Function" (e.g., Mean Squared Error). This measures how "wrong" the network is.
+2. **Optimizer:** An algorithm (like Gradient Descent) calculates how much each weight and bias contributed to the error.
+3. **Weight Update:** The weights are adjusted in the direction that reduces the error for the next round.
+
+---
+
+## 4. Common Types of Neural Networks
+
+Different architectures are used depending on the task:
+
+* **ANN (Artificial Neural Network):** The standard version used for tabular data and basic regression/classification.
+* **CNN (Convolutional Neural Network):** Specialized for spatial data like images and video. It uses "filters" to detect edges, shapes, and objects.
+* **RNN (Recurrent Neural Network):** Designed for sequential data like text, speech, or time-series (e.g., stock prices). It has "memory" of previous inputs.
+* **Transformers:** The modern standard for Natural Language Processing (the tech behind LLMs), which uses "attention mechanisms" to process entire sequences of data simultaneously.
+
+---
+
+## 5. Summary of Key Terms
+
+* **Epoch:** One complete pass of the entire training dataset through the network.
+* **Learning Rate:** A small number that determines how large the steps are during weight updates. Too large, and the model overshoots; too small, and it takes forever to train.
+* **Overfitting:** When a model learns the training data *too* well (including the noise) and fails to perform on new, unseen data.
+
+---

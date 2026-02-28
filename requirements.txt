@@ -4,7 +4,7 @@ sentence-transformers
 faiss-cpu
 openai
 numpy
-google-generativeai
+google-genai
 pypdf
 python-docx
 djangorestframework-simplejwt

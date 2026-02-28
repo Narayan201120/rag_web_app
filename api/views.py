@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from api.retriever import build_index, search, rerank
-from api.generator import generate_answer
+from api.generator import generate_answer, test_provider_connection, ProviderAPIError
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
@@ -22,9 +22,11 @@ from django.utils import timezone
 from bs4 import BeautifulSoup
 from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile, Conversation, Task
 from api.tasks import submit_task, TaskCancelled
+from api.llm_catalog import PROVIDER_MODELS
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
+SUPPORTED_LLM_PROVIDERS = [choice[0] for choice in UserProfile.PROVIDER_CHOICES]
 
 _current_user_id = None
 
@@ -309,9 +311,30 @@ class AskView(APIView):
         sources = [chunk_sources[i] for i in top_indices]
         try:
             profile, _ = UserProfile.objects.get_or_create(user=request.user)
-            user_key = profile.gemini_api_key or None
-            answer = generate_answer(question, top_chunks, api_key=user_key)
-        except Exception as e:
+            allowed_models = PROVIDER_MODELS.get(profile.llm_provider, [])
+            if profile.llm_model not in allowed_models:
+                return Response(
+                    {"error": "Selected model is not valid for the chosen provider. Update Settings."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            answer = generate_answer(
+                question,
+                top_chunks,
+                provider=profile.llm_provider,
+                model=profile.llm_model,
+                api_key=profile.llm_api_key,
+            )
+        except ValueError as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except ProviderAPIError as e:
+            return Response(
+                {"error": str(e)},
+                status=e.status_code
+            )
+        except Exception:
             return Response(
                 {"error": "The answer service is temporarily unavailable. Please try again later."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
@@ -701,8 +724,30 @@ class ChatView(APIView):
         sources = list(dict.fromkeys([chunk_sources[i] for i in top_indices]))
         try:
             profile, _ = UserProfile.objects.get_or_create(user=request.user)
-            user_key = profile.gemini_api_key or None
-            answer = generate_answer(question, top_chunks, api_key=user_key, chat_history=chat_history)
+            allowed_models = PROVIDER_MODELS.get(profile.llm_provider, [])
+            if profile.llm_model not in allowed_models:
+                return Response(
+                    {'error': 'Selected model is not valid for the chosen provider. Update Settings.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            answer = generate_answer(
+                question,
+                top_chunks,
+                provider=profile.llm_provider,
+                model=profile.llm_model,
+                api_key=profile.llm_api_key,
+                chat_history=chat_history,
+            )
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except ProviderAPIError as e:
+            return Response(
+                {'error': str(e)},
+                status=e.status_code
+            )
         except Exception:
             return Response(
                 {'error': 'The answer service is temporarily unavailable'},
@@ -1109,24 +1154,105 @@ class APIKeyView(APIView):
 
     def get(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        key = profile.gemini_api_key
+        key = profile.llm_api_key
         if key:
-            masked = key[:4] + "." * (len(key) - 8) + key[-4:]
+            if len(key) <= 8:
+                masked = "*" * len(key)
+            else:
+                masked = key[:4] + "." * (len(key) - 8) + key[-4:]
         else:
             masked = ''
         return Response(
-            {'api_key': masked},
+            {
+                'provider': profile.llm_provider,
+                'model': profile.llm_model,
+                'supported_providers': SUPPORTED_LLM_PROVIDERS,
+                'provider_models': PROVIDER_MODELS,
+                'api_key': masked,
+            },
             status=status.HTTP_200_OK
         )
     
     def post(self, request):
+        provider = (request.data.get('provider') or '').strip()
+        model = (request.data.get('model') or '').strip()
+        api_key = (request.data.get('api_key') or '').strip()
+        if provider not in SUPPORTED_LLM_PROVIDERS:
+            return Response(
+                {'error': 'Please select a valid provider.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        allowed_models = PROVIDER_MODELS.get(provider, [])
+        if model not in allowed_models:
+            return Response(
+                {'error': 'Please select a valid model for the chosen provider.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not api_key:
+            return Response(
+                {'error': 'Please provide an API key.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        profile.gemini_api_key = request.data.get('api_key', '')
+        profile.llm_provider = provider
+        profile.llm_model = model
+        profile.llm_api_key = api_key
         profile.save()
         return Response(
-            {'message': 'API key saved successfully.'},
+            {'message': 'Provider, model, and API key saved successfully.'},
             status=status.HTTP_200_OK
         )
+
+
+class APIKeyConnectionTestView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+
+        provider = (request.data.get("provider") or profile.llm_provider or "").strip()
+        model = (request.data.get("model") or profile.llm_model or "").strip()
+        api_key = (request.data.get("api_key") or profile.llm_api_key or "").strip()
+
+        if provider not in SUPPORTED_LLM_PROVIDERS:
+            return Response(
+                {"error": "Please select a valid provider."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        allowed_models = PROVIDER_MODELS.get(provider, [])
+        if model not in allowed_models:
+            return Response(
+                {"error": "Please select a valid model for the chosen provider."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not api_key:
+            return Response(
+                {"error": "No API key available. Save a key first or provide one to test."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            reply = test_provider_connection(provider, model, api_key)
+            return Response(
+                {
+                    "message": "Connection successful.",
+                    "provider": provider,
+                    "model": model,
+                    "reply_excerpt": (reply or "")[:160],
+                },
+                status=status.HTTP_200_OK,
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except ProviderAPIError as e:
+            return Response({"error": str(e)}, status=e.status_code)
+        except Exception:
+            return Response(
+                {"error": "Connection test failed unexpectedly."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
 
 """ TASK STATUS VIEW """

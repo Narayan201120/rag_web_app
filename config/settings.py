@@ -173,9 +173,12 @@ REST_FRAMEWORK = {
 
 from datetime import timedelta
 
+JWT_SIGNING_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME':
     timedelta(minutes=30),
     'REFRESH_TOKEN_LIFETIME':
     timedelta(days=1),
+    'SIGNING_KEY': JWT_SIGNING_KEY,
 }

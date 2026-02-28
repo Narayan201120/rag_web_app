@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
 const API = 'http://127.0.0.1:8000/api';
@@ -13,12 +13,12 @@ function Documents() {
     const [previewLoading, setPreviewLoading] = useState(false);
     const pollRef = useRef(null);
 
-    const authHeaders = () => {
+    const authHeaders = useCallback(() => {
         const token = localStorage.getItem('access');
         return token ? { Authorization: `Bearer ${token}` } : {};
-    };
+    }, []);
 
-    const requestWithRefresh = async (requestFn) => {
+    const requestWithRefresh = useCallback(async (requestFn) => {
         try {
             return await requestFn(authHeaders());
         } catch (err) {
@@ -37,7 +37,7 @@ function Documents() {
                 throw refreshErr;
             }
         }
-    };
+    }, [authHeaders]);
 
     const normalizeHttpUrl = (rawValue) => {
         const trimmed = (rawValue || '').trim();
@@ -56,7 +56,7 @@ function Documents() {
         }
     };
 
-    const fetchDocs = async () => {
+    const fetchDocs = useCallback(async () => {
         try {
             const res = await requestWithRefresh((headers) => axios.get(`${API}/documents/`, { headers }));
             setDocuments(res.data.documents);
@@ -64,7 +64,7 @@ function Documents() {
             setDocuments([]);
             setMessage(err.response?.data?.error || 'Failed to load documents. Please sign in again.');
         }
-    };
+    }, [requestWithRefresh]);
 
     const stopPolling = () => {
         if (pollRef.current) {
@@ -114,7 +114,7 @@ function Documents() {
     useEffect(() => {
         fetchDocs();
         return () => stopPolling();
-    }, []);
+    }, [fetchDocs]);
 
     const handleUpload = async (e) => {
         e.preventDefault();

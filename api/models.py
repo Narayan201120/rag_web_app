@@ -88,8 +88,22 @@ class APIUsageLog(models.Model):
 
 """ USER PROFILE MODEL """
 class UserProfile(models.Model):
+    PROVIDER_CHOICES = [
+        ("google-gemini", "Google Gemini"),
+        ("openai", "OpenAI"),
+        ("anthropic", "Anthropic"),
+        ("mistral", "Mistral"),
+        ("xai", "xAI"),
+        ("qwen", "Qwen"),
+        ("minimax", "MiniMax"),
+        ("meta-llama", "Meta Llama"),
+        ("other", "Other"),
+    ]
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    gemini_api_key = models.TextField(blank=True, default='')
+    llm_provider = models.CharField(max_length=32, choices=PROVIDER_CHOICES, default="google-gemini")
+    llm_model = models.CharField(max_length=128, default="gemini-2.5-flash")
+    llm_api_key = models.TextField(blank=True, default='')
 
     def __str__(self):
         return f"{self.user.username}'s profile"

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 const API = 'http://127.0.0.1:8000/api';
@@ -12,13 +12,59 @@ function Settings({ onLogout }) {
     const [deletePassword, setDeletePassword] = useState('');
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
-    const token = localStorage.getItem('access');
-    const headers = { Authorization: `Bearer ${token}` };
 
     const [resultsCount, setResultsCount] = useState(localStorage.getItem('pref_results') || '5');
     const [searchMode, setSearchMode] = useState(localStorage.getItem('pref_searchMode') || 'search');
     const [apiKey, setApiKey] = useState('');
     const [apiKeyDisplay, setApiKeyDisplay] = useState('');
+    const [provider, setProvider] = useState('google-gemini');
+    const [model, setModel] = useState('gemini-2.5-flash');
+    const [providerOptions, setProviderOptions] = useState([]);
+    const [providerModels, setProviderModels] = useState({});
+    const [connectionStatus, setConnectionStatus] = useState('');
+    const [testingConnection, setTestingConnection] = useState(false);
+
+    const authHeaders = useCallback(() => {
+        const token = localStorage.getItem('access');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    }, []);
+
+    const requestWithRefresh = useCallback(async (requestFn) => {
+        try {
+            return await requestFn(authHeaders());
+        } catch (err) {
+            if (err.response?.status !== 401) throw err;
+            const refresh = localStorage.getItem('refresh');
+            if (!refresh) {
+                onLogout();
+                throw err;
+            }
+            try {
+                const refreshRes = await axios.post(`${API}/token/refresh/`, { refresh });
+                localStorage.setItem('access', refreshRes.data.access);
+                return await requestFn(authHeaders());
+            } catch (refreshErr) {
+                localStorage.removeItem('access');
+                localStorage.removeItem('refresh');
+                onLogout();
+                throw refreshErr;
+            }
+        }
+    }, [authHeaders, onLogout]);
+
+    const fetchApiKeySettings = useCallback(async () => {
+        try {
+            const res = await requestWithRefresh((headers) => axios.get(`${API}/settings/api-key/`, { headers }));
+            setApiKeyDisplay(res.data.api_key || '');
+            setProvider(res.data.provider || 'google-gemini');
+            setModel(res.data.model || 'gemini-2.5-flash');
+            setProviderOptions(res.data.supported_providers || []);
+            setProviderModels(res.data.provider_models || {});
+            setError('');
+        } catch (err) {
+            setError(err.response?.data?.error || 'Failed to load provider settings');
+        }
+    }, [requestWithRefresh]);
 
     const savePreferences = () => {
         localStorage.setItem('pref_results', resultsCount);
@@ -28,38 +74,63 @@ function Settings({ onLogout }) {
     };
 
     useEffect(() => {
-        axios.get(`${API}/settings/api-key/`, { headers })
-            .then((res) => setApiKeyDisplay(res.data.api_key))
-            .catch((err) => console.error(err));
-    }, []);
+        fetchApiKeySettings();
+    }, [fetchApiKeySettings]);
+
+    useEffect(() => {
+        const models = providerModels[provider] || [];
+        if (models.length > 0 && !models.includes(model)) {
+            setModel(models[0]);
+        }
+    }, [provider, providerModels, model]);
 
     const handleSaveApiKey = async () => {
         try {
-            await axios.post(`${API}/settings/api-key/`, { api_key: apiKey }, { headers });
-            setMessage('API key saved.');
+            await requestWithRefresh((headers) => axios.post(`${API}/settings/api-key/`, { provider, model, api_key: apiKey }, { headers }));
+            setMessage('Provider, model, and API key saved.');
+            setError('');
+            setConnectionStatus('');
             setApiKey('');
-            const res = await axios.get(`${API}/settings/api-key/`, { headers });
-            setApiKeyDisplay(res.data.api_key);
+            await fetchApiKeySettings();
             setTimeout(() => setMessage(''), 2000);
         } catch (err) {
-            setError('Failed to save API key');
+            setError(err.response?.data?.error || 'Failed to save provider/API key');
+        }
+    };
+
+    const handleTestConnection = async () => {
+        setTestingConnection(true);
+        setConnectionStatus('');
+        setError('');
+        try {
+            const res = await requestWithRefresh((headers) => axios.post(
+                `${API}/settings/api-key/test/`,
+                { provider, model, api_key: apiKey },
+                { headers }
+            ));
+            const excerpt = res.data.reply_excerpt ? ` Response: ${res.data.reply_excerpt}` : '';
+            setConnectionStatus(`Connection successful.${excerpt}`);
+        } catch (err) {
+            setError(err.response?.data?.error || 'Connection test failed');
+        } finally {
+            setTestingConnection(false);
         }
     };
 
     useEffect(() => {
         if (section === 'account') {
-            axios.get(`${API}/account/`, { headers })
+            requestWithRefresh((headers) => axios.get(`${API}/account/`, { headers }))
                 .then((res) => setAccount(res.data))
                 .catch((err) => console.error(err));
         }
-    }, [section]);
+    }, [section, requestWithRefresh]);
 
     useEffect(() => {
         if (section === 'admin') {
             Promise.all([
-                axios.get(`${API}/admin/usage/`, { headers }),
-                axios.get(`${API}/admin/vectors/`, { headers }),
-                axios.get(`${API}/status/`, { headers }),
+                requestWithRefresh((headers) => axios.get(`${API}/admin/usage/`, { headers })),
+                requestWithRefresh((headers) => axios.get(`${API}/admin/vectors/`, { headers })),
+                requestWithRefresh((headers) => axios.get(`${API}/status/`, { headers })),
             ])
                 .then(([usageRes, vectorsRes, statusRes]) => {
                     setUsage(usageRes.data);
@@ -71,15 +142,15 @@ function Settings({ onLogout }) {
                     setError(err.response?.data?.error || 'Admin access required');
                 });
         }
-    }, [section]);
+    }, [section, requestWithRefresh]);
 
     const handleDeleteAccount = async () => {
         if (!window.confirm('Are you sure? This cannot be undone!')) return;
         try {
-            await axios.delete(`${API}/account/delete/`, {
+            await requestWithRefresh((headers) => axios.delete(`${API}/account/delete/`, {
                 headers,
                 data: { password: deletePassword },
-            });
+            }));
             alert('Account deleted.');
             onLogout();
         } catch (err) {
@@ -124,14 +195,43 @@ function Settings({ onLogout }) {
                             <button className="save-btn" onClick={savePreferences}>Save Preferences</button>
 
                             <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #2f3036' }}>
-                                <h4 style={{ marginBottom: '14px' }}>Gemini API Key</h4>
+                                <h4 style={{ marginBottom: '14px' }}>LLM Provider & API Key</h4>
                                 <p style={{ marginBottom: '12px', fontSize: '0.8rem' }}>
-                                    Current: {apiKeyDisplay || 'Not set (using server default)'}
+                                    Current Key: {apiKeyDisplay || 'Not set'}
+                                </p>
+                                <div className="setting-row" style={{ marginBottom: '12px' }}>
+                                    <label>Provider</label>
+                                    <select value={provider} onChange={(e) => setProvider(e.target.value)}>
+                                        {(providerOptions.length ? providerOptions : [
+                                            'google-gemini',
+                                            'openai',
+                                            'anthropic',
+                                            'mistral',
+                                            'xai',
+                                            'qwen',
+                                            'minimax',
+                                            'meta-llama',
+                                            'other',
+                                        ]).map((p) => (
+                                            <option key={p} value={p}>{p}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="setting-row" style={{ marginBottom: '12px' }}>
+                                    <label>Model</label>
+                                    <select value={model} onChange={(e) => setModel(e.target.value)}>
+                                        {(providerModels[provider] || ['custom-model']).map((m) => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <p style={{ marginBottom: '12px', fontSize: '0.8rem' }}>
+                                    If your key does not have access to a selected model, the provider error will be shown in chat.
                                 </p>
                                 <div style={{ display: 'flex', gap: '8px' }}>
                                     <input
                                         type="password"
-                                        placeholder="Enter new API key..."
+                                        placeholder="Enter provider API key..."
                                         value={apiKey}
                                         onChange={(e) => setApiKey(e.target.value)}
                                         style={{
@@ -145,7 +245,16 @@ function Settings({ onLogout }) {
                                         }}
                                     />
                                     <button className="save-btn" onClick={handleSaveApiKey}>Save Key</button>
+                                    <button
+                                        className="save-btn"
+                                        onClick={handleTestConnection}
+                                        disabled={testingConnection}
+                                    >
+                                        {testingConnection ? 'Testing...' : 'Test Connection'}
+                                    </button>
                                 </div>
+                                {connectionStatus && <p className="success">{connectionStatus}</p>}
+                                {error && <p className="error">{error}</p>}
                             </div>
                         </div>
                     )}

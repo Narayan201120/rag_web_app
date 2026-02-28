@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
 const API = 'http://127.0.0.1:8000/api';
@@ -100,25 +100,46 @@ function Chat() {
     const [showHistory, setShowHistory] = useState(false);
     const fileInputRef = useRef(null);
 
-    const token = localStorage.getItem('access');
-    const headers = { Authorization: `Bearer ${token}` };
+    const authHeaders = useCallback(() => {
+        const token = localStorage.getItem('access');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    }, []);
 
-    const loadConversations = async () => {
+    const requestWithRefresh = useCallback(async (requestFn) => {
         try {
-            const res = await axios.get(`${API}/chat/history/`, { headers });
+            return await requestFn(authHeaders());
+        } catch (err) {
+            if (err.response?.status !== 401) throw err;
+            const refresh = localStorage.getItem('refresh');
+            if (!refresh) throw err;
+            try {
+                const refreshRes = await axios.post(`${API}/token/refresh/`, { refresh });
+                localStorage.setItem('access', refreshRes.data.access);
+                return await requestFn(authHeaders());
+            } catch (refreshErr) {
+                localStorage.removeItem('access');
+                localStorage.removeItem('refresh');
+                throw refreshErr;
+            }
+        }
+    }, [authHeaders]);
+
+    const loadConversations = useCallback(async () => {
+        try {
+            const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/history/`, { headers }));
             setConversations(res.data.conversations || []);
         } catch (err) {
             console.error(err);
         }
-    };
+    }, [requestWithRefresh]);
 
     useEffect(() => {
         loadConversations();
-    }, []);
+    }, [loadConversations]);
 
     const loadConversation = async (convId) => {
         try {
-            const res = await axios.get(`${API}/chat/conversations/${convId}/`, { headers });
+            const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/conversations/${convId}/`, { headers }));
             setConversationId(convId);
             setMessages(
                 res.data.messages.map((m) => ({
@@ -143,7 +164,7 @@ function Chat() {
             if (conversationId) {
                 body.conversation_id = conversationId;
             }
-            const res = await axios.post(`${API}/chat/`, body, { headers });
+            const res = await requestWithRefresh((headers) => axios.post(`${API}/chat/`, body, { headers }));
 
             if (res.data.conversation_id) {
                 setConversationId(res.data.conversation_id);
@@ -178,9 +199,9 @@ function Chat() {
         formData.append('document', selectedFile);
 
         try {
-            const res = await axios.post(`${API}/upload/`, formData, {
+            const res = await requestWithRefresh((headers) => axios.post(`${API}/upload/`, formData, {
                 headers: { ...headers, 'Content-Type': 'multipart/form-data' },
-            });
+            }));
             alert(res.data.message || `Queued upload for "${selectedFile.name}".`);
         } catch (err) {
             alert(`Upload failed: ${err.response?.data?.error || 'Something went wrong'}`);

@@ -16,3 +16,4 @@ psycopg[binary]
 trafilatura
 gunicorn
 whitenoise
+django-cors-headers

@@ -192,6 +192,31 @@ def _normalize_formula_text(formula):
     return normalized
 
 
+_LATEX_CMD_RE = re.compile(
+    r"\\(?:frac|text|sum|prod|int|left|right|begin|end|hat|geq|leq|neq"
+    r"|cdot|times|sqrt|partial|nabla|infty|pm|mp|mathbb|mathcal|mathrm"
+    r"|mathbf|operatorname|quad|Rightarrow|rightarrow|Leftarrow|leftarrow"
+    r"|alpha|beta|gamma|delta|theta|lambda|mu|sigma|omega|zeta|eta|pi"
+    r"|underset|overset|binom|max|min|log|lim|arg)[\s{\\([]?"
+)
+
+
+def _looks_like_latex(text):
+    """Return True if text contains LaTeX math commands."""
+    return bool(_LATEX_CMD_RE.search(text))
+
+
+# Matches standalone LaTeX commands in plain prose, e.g. \hat{y}, \zeta_i, \geq
+_INLINE_LATEX_RE = re.compile(
+    r"\\[a-zA-Z]+(?:\{[^}]*\}|_\{[^}]*\}|_[a-zA-Z0-9]|\^[a-zA-Z0-9])*"
+)
+
+
+def _wrap_inline_latex(text):
+    """Wrap raw LaTeX commands in prose with $...$ so the renderer can typeset them."""
+    return _INLINE_LATEX_RE.sub(lambda m: f"${m.group()}$", text)
+
+
 def _clean_extracted_text(text):
     if not text:
         return ""
@@ -272,6 +297,21 @@ def _extract_markdown_from_html(html_text):
         tag.decompose()
     for tag in soup.select(".reference, .mw-editsection, .navbox, .reflist, .toc"):
         tag.decompose()
+    # Extract LaTeX from KaTeX-rendered spans BEFORE stripping them.
+    # .katex-display wraps block/display math; .katex wraps inline math.
+    # Each contains .katex-mathml > <annotation encoding="application/x-tex">
+    # which holds the original LaTeX source we need.
+    for span in soup.find_all(class_="katex-display"):
+        ann = span.find("annotation", attrs={"encoding": "application/x-tex"})
+        formula = _normalize_formula_text(ann.get_text()) if ann else ""
+        span.replace_with(f" $${formula}$$ " if formula else "")
+
+    for span in soup.find_all(class_="katex"):
+        ann = span.find("annotation", attrs={"encoding": "application/x-tex"})
+        formula = _normalize_formula_text(ann.get_text()) if ann else ""
+        span.replace_with(f" ${formula}$ " if formula else "")
+
+    # Remove any leftover MathML/screen-reader nodes.
     for tag in soup.select(".mwe-math-mathml-a11y, .katex-mathml"):
         tag.decompose()
 
@@ -306,8 +346,33 @@ def _extract_markdown_from_html(html_text):
         or soup.body
         or soup
     )
+    # --- Universal nav/sidebar stripping ---
+    # 1. ARIA roles
+    for tag in root.find_all(attrs={"role": ["navigation", "banner", "complementary", "search"]}):
+        tag.decompose()
+    # 2. Common class/id patterns across popular sites
+    try:
+        for tag in root.select(
+            "#header,#footer,#sidebar,#menu,#navbar,#site-nav,#breadcrumb,"
+            ".menu,.navbar,.nav-menu,.site-nav,.breadcrumb,.breadcrumbs,"
+            ".widget,.ad,.ads,.advertisement,.cookie-banner,.related-articles,"
+            ".related-posts,.social-share,.comment-section"
+        ):
+            tag.decompose()
+    except Exception:
+        pass
+    # 3. Strip leading <ul>/<ol> before the first heading or paragraph
+    first_content = root.find(["p", "h1", "h2", "h3", "h4", "h5", "h6"])
+    if first_content:
+        for sibling in list(root.children):
+            if sibling == first_content:
+                break
+            if hasattr(sibling, "name") and sibling.name in ("ul", "ol"):
+                sibling.decompose()
+
     block_tags = ("h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "blockquote", "pre")
     blocks = []
+
 
     for node in root.find_all(block_tags):
         if node.name == "li":
@@ -326,21 +391,63 @@ def _extract_markdown_from_html(html_text):
             prefix = "1. " if parent and parent.name == "ol" else "- "
             blocks.append(f"{prefix}{text}")
         elif node.name == "blockquote":
-            blocks.append(f"> {text}")
+            # Emit as display math if content looks like LaTeX, else as a quote.
+            if _looks_like_latex(text):
+                blocks.append(f"$${text}$$")
+            else:
+                blocks.append(f"> {text}")
         elif node.name == "pre":
             blocks.append(f"```\n{text}\n```")
         else:
-            blocks.append(text)
+            # Wrap any raw LaTeX commands in prose paragraphs with $...$
+            blocks.append(_wrap_inline_latex(text))
+
+    # Anchor to first heading — final safety net for nav items that slipped through.
+    first_h_idx = next(
+        (i for i, b in enumerate(blocks) if b.startswith("# ") or b.startswith("## ")), None
+    )
+    if first_h_idx and first_h_idx > 0:
+        pre = blocks[:first_h_idx]
+        nav_count = sum(1 for b in pre if b.startswith("- ") or b.startswith("1. "))
+        if nav_count > len(pre) * 0.5:
+            blocks = blocks[first_h_idx:]
 
     cleaned_blocks = []
     for block in blocks:
-        if cleaned_blocks and cleaned_blocks[-1] == block:
-            continue
+        if cleaned_blocks:
+            prev = cleaned_blocks[-1]
+            if prev == block:
+                continue
+            # Normalize for comparison: strip all $ signs and whitespace.
+            prev_norm = re.sub(r"[\s$]+", "", prev)
+            curr_norm = re.sub(r"[\s$]+", "", block)
+            # Drop if the normalized text matches (catches $$formula$$ vs $\cmd$ $\cmd$ duplicates).
+            if prev_norm and curr_norm and prev_norm == curr_norm:
+                continue
+            # Drop if the previous was display math and current is a subset of it.
+            if prev.startswith("$$") and prev_norm and curr_norm and curr_norm in prev_norm:
+                continue
+            # Drop plain paragraph that duplicates a preceding blockquote.
+            if prev.startswith("> ") and re.sub(r"[\s$]+", "", prev[2:]) == curr_norm:
+                continue
         cleaned_blocks.append(block)
+
+    # Trim trailing UI noise (quiz widgets, score counters, etc.)
+    _NOISE_RE = re.compile(
+        r"^(\d+\s*(Questions?|Answers?|Attempts?)?$"
+        r"|Your\s+Score\s*:"
+        r"|Accuracy\s*:"
+        r"|Score\s*:\s*\d"
+        r"|Advertisement$)",
+        re.IGNORECASE,
+    )
+    while cleaned_blocks and _NOISE_RE.match(cleaned_blocks[-1].strip()):
+        cleaned_blocks.pop()
 
     if cleaned_blocks:
         return "\n\n".join(cleaned_blocks)
     return _extract_readable_text_from_html(html_text)
+
 
 
 def load_documents(user, progress_callback=None, is_cancelled=None):

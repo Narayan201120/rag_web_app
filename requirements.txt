@@ -13,3 +13,4 @@ dotenv
 beautifulsoup4
 dj-database-url
 psycopg[binary]
+trafilatura

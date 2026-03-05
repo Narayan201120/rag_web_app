@@ -3,68 +3,137 @@ import axios from 'axios';
 
 const API = 'http://127.0.0.1:8000/api';
 
+// Render LaTeX using KaTeX (loaded from CDN in index.html).
+// Returns an HTML string on success, or null if KaTeX isn't ready.
+function katexRender(latex, display) {
+    try {
+        if (window.katex) {
+            return window.katex.renderToString(latex.trim(), {
+                displayMode: display,
+                throwOnError: false,
+            });
+        }
+    } catch (e) { /* ignore */ }
+    return null;
+}
+
+// Render a single text line, turning $...$ into inline KaTeX elements.
+function renderLine(text, keyPrefix) {
+    const parts = [];
+    let rest = text;
+    let idx = 0;
+    while (rest.length > 0) {
+        const s = rest.indexOf('$');
+        if (s === -1) { parts.push(<span key={`${keyPrefix}-t${idx}`}>{rest}</span>); break; }
+        if (s > 0) parts.push(<span key={`${keyPrefix}-t${idx}`}>{rest.slice(0, s)}</span>);
+        const e = rest.indexOf('$', s + 1);
+        if (e === -1) { parts.push(<span key={`${keyPrefix}-t${idx}`}>{rest.slice(s)}</span>); break; }
+        const latex = rest.slice(s + 1, e);
+        const html = katexRender(latex, false);
+        if (html) {
+            parts.push(<span key={`${keyPrefix}-m${idx}`} dangerouslySetInnerHTML={{ __html: html }} />);
+        } else {
+            parts.push(<span key={`${keyPrefix}-m${idx}`}><code>{`$${latex}$`}</code></span>);
+        }
+        rest = rest.slice(e + 1);
+        idx++;
+    }
+    // If no math found, return the raw string for simpler DOM output.
+    if (parts.length === 1 && parts[0].props?.children === text) return text;
+    return parts;
+}
+
 function renderMarkdownContent(content) {
-    const lines = String(content || '').split('\n');
+    const text = String(content || '');
     const nodes = [];
     let listBuffer = [];
     let listType = null;
+    let pos = 0;
 
     const flushList = () => {
         if (!listBuffer.length) return;
-        const ListTag = listType === 'ol' ? 'ol' : 'ul';
+        const Tag = listType === 'ol' ? 'ol' : 'ul';
         nodes.push(
-            <ListTag key={`list-${nodes.length}`} className="md-list">
-                {listBuffer.map((item, i) => <li key={i}>{item}</li>)}
-            </ListTag>
+            <Tag key={`list-${nodes.length}`} className="md-list">
+                {listBuffer.map((item, i) => <li key={i}>{renderLine(item, `li-${i}`)}</li>)}
+            </Tag>
         );
         listBuffer = [];
         listType = null;
     };
 
-    lines.forEach((raw, i) => {
-        const line = raw.trim();
-        if (!line) {
+    // First pass: split on $$...$$ display blocks (which may span multiple lines).
+    const segments = [];
+    while (pos < text.length) {
+        const start = text.indexOf('$$', pos);
+        if (start === -1) {
+            text.slice(pos).split('\n').forEach(l => segments.push({ type: 'line', text: l }));
+            break;
+        }
+        if (start > pos) {
+            text.slice(pos, start).split('\n').forEach(l => segments.push({ type: 'line', text: l }));
+        }
+        const end = text.indexOf('$$', start + 2);
+        if (end === -1) {
+            text.slice(start).split('\n').forEach(l => segments.push({ type: 'line', text: l }));
+            break;
+        }
+        segments.push({ type: 'display', text: text.slice(start + 2, end).trim() });
+        pos = end + 2;
+    }
+
+    // Second pass: render each segment.
+    segments.forEach((seg, i) => {
+        if (seg.type === 'display') {
             flushList();
+            const html = katexRender(seg.text, true);
+            if (html) {
+                nodes.push(<div key={`dm-${i}`} className="md-math-block" dangerouslySetInnerHTML={{ __html: html }} />);
+            } else {
+                nodes.push(<pre key={`dm-${i}`} className="md-math-block"><code>{seg.text}</code></pre>);
+            }
             return;
         }
+
+        const line = seg.text.trim();
+        if (!line) { flushList(); return; }
 
         const heading = line.match(/^(#{1,6})\s+(.*)$/);
         if (heading) {
             flushList();
             const level = heading[1].length;
-            const text = heading[2];
-            if (level === 1) nodes.push(<h1 key={`h1-${i}`}>{text}</h1>);
-            else if (level === 2) nodes.push(<h2 key={`h2-${i}`}>{text}</h2>);
-            else if (level === 3) nodes.push(<h3 key={`h3-${i}`}>{text}</h3>);
-            else if (level === 4) nodes.push(<h4 key={`h4-${i}`}>{text}</h4>);
-            else if (level === 5) nodes.push(<h5 key={`h5-${i}`}>{text}</h5>);
-            else nodes.push(<h6 key={`h6-${i}`}>{text}</h6>);
+            const Tag = `h${Math.min(6, level)}`;
+            nodes.push(<Tag key={`h-${i}`}>{renderLine(heading[2], `h-${i}`)}</Tag>);
             return;
         }
 
         const ordered = line.match(/^\d+\.\s+(.*)$/);
         if (ordered) {
             if (listType && listType !== 'ol') flushList();
-            listType = 'ol';
-            listBuffer.push(ordered[1]);
-            return;
+            listType = 'ol'; listBuffer.push(ordered[1]); return;
         }
 
         const unordered = line.match(/^[-*]\s+(.*)$/);
         if (unordered) {
             if (listType && listType !== 'ul') flushList();
-            listType = 'ul';
-            listBuffer.push(unordered[1]);
+            listType = 'ul'; listBuffer.push(unordered[1]); return;
+        }
+
+        const blockquote = line.match(/^>\s+(.*)/);
+        if (blockquote) {
+            flushList();
+            nodes.push(<blockquote key={`bq-${i}`} className="md-blockquote">{renderLine(blockquote[1], `bq-${i}`)}</blockquote>);
             return;
         }
 
         flushList();
-        nodes.push(<p key={`p-${i}`}>{line}</p>);
+        nodes.push(<p key={`p-${i}`}>{renderLine(line, `p-${i}`)}</p>);
     });
 
     flushList();
     return nodes;
 }
+
 
 function Documents() {
     const [documents, setDocuments] = useState([]);
@@ -97,7 +166,7 @@ function Documents() {
         if (!window.MathJax || !previewBodyRef.current) return;
         if (window.MathJax.typesetPromise) {
             window.MathJax.typesetClear?.([previewBodyRef.current]);
-            window.MathJax.typesetPromise([previewBodyRef.current]).catch(() => {});
+            window.MathJax.typesetPromise([previewBodyRef.current]).catch(() => { });
         }
     }, [previewDoc]);
 

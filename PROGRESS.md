@@ -1,6 +1,6 @@
 # RAG Web App Progress Log
 
-Last updated: February 28, 2026
+Last updated: March 1, 2026
 
 ## Snapshot
 
@@ -84,6 +84,26 @@ Last updated: February 28, 2026
 - Document listing now prefers `.md` over `.txt` when both exist for the same stem.
 - Frontend document preview now detects `.md` and renders markdown content in the Open modal.
 - Regenerated and stored markdown samples under `documents/2/` (including `Mandelbrot_set.md`).
+- Added KaTeX CDN (CSS + JS) to `frontend/public/index.html` for synchronous client-side math rendering — no npm install needed.
+- Backend scraper (`api/views.py`) now extracts LaTeX from KaTeX-rendered `<span class="katex">` and `<span class="katex-display">` elements:
+  - Display math → `$$formula$$`
+  - Inline math → `$formula$`
+  - Works universally for any site using KaTeX (GeeksForGeeks, LeetCode, etc.).
+  - Wikipedia `<math>` tag extraction was already in place.
+- Frontend `renderMarkdownContent` in `Documents.js` rewritten with KaTeX support:
+  - `$$...$$` display math blocks rendered via `window.katex.renderToString(displayMode: true)`.
+  - `$...$` inline math in paragraphs, headings, lists, and blockquotes rendered via `window.katex.renderToString(displayMode: false)`.
+  - Falls back to monospace `<code>` if KaTeX CDN hasn't loaded.
+  - MathJax removed entirely — KaTeX handles all math rendering synchronously.
+- Universal nav/sidebar stripping added to `_extract_markdown_from_html`:
+  - ARIA role-based removal (`navigation`, `banner`, `complementary`, `search`).
+  - Common CSS class/id pattern removal (`.menu`, `.navbar`, `#sidebar`, `.ad`, etc.).
+  - Leading `<ul>/<ol>` stripped before the first heading or paragraph.
+  - H1 anchor trimmer: if >50% of blocks before the first heading are list items, drops them as nav.
+- Blockquote LaTeX handling: blockquotes containing LaTeX commands (detected by `_looks_like_latex`) now emit `$$formula$$` instead of `> formula`.
+- Formula deduplication improved: normalizes both blocks by stripping all `$` and whitespace before comparing; also drops blocks that are subsets of the preceding `$$...$$` display math.
+- Inline LaTeX wrapper (`_wrap_inline_latex`): wraps standalone `\command{...}` patterns in prose paragraphs with `$...$` for rendering.
+- Trailing UI noise trimmer: strips quiz widgets, score counters, and advertisements from the end of scraped content.
 
 ## Validation Work Done
 
@@ -135,13 +155,16 @@ Last updated: February 28, 2026
 
 - No backend dependency blocker in venv for current test command.
 - Backend test coverage remains partial but now includes smoke coverage for auth/account/password/search/task, chat history/export, feedback/citations, and admin usage/vector endpoints.
-- Math formula rendering in document preview remains an open UX issue:
-- Markdown files currently contain LaTeX syntax (e.g., `$f_{c}(z)=z^{2}+c$`) but formulas are still shown as raw source in preview for some users/environments.
-- Further frontend math rendering integration is needed (e.g., MathJax/KaTeX render pass in the preview modal).
+- Math formula rendering in document preview is **partially resolved**:
+  - `$$...$$` display math blocks render correctly via KaTeX in the preview modal.
+  - `$...$` inline math renders correctly where the backend properly wraps LaTeX commands.
+  - **Remaining issue**: inline raw LaTeX in prose (e.g. `\zeta_i` in list items, bare variables like `y_i` or `x_i` without `\` prefix) is inconsistently wrapped. The `_wrap_inline_latex` regex only matches `\command{...}` patterns, missing bare subscript/superscript notation.
+  - **Recommended next step**: consider switching from hand-built block extraction to a battle-tested library like `trafilatura` for content extraction, then post-process formulas.
 
 ## What Remains Next
 
-- Resolve markdown formula rendering in the document Open modal so LaTeX appears visually typeset rather than raw.
+- Resolve remaining inline LaTeX inconsistencies in prose paragraphs and list items.
+- Consider replacing hand-built HTML block walker with `trafilatura` or similar library for more robust content extraction.
 - Optionally clean up legacy `.txt` URL-ingested artifacts after equivalent `.md` files are verified.
 
 ## Notes For New Sessions

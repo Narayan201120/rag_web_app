@@ -2,6 +2,9 @@
 .env
 venv/
 
+# ===== Private dev tracking =====
+PROGRESS.md
+
 # ===== Python =====
 __pycache__/
 *.py[cod]

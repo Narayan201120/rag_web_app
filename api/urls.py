@@ -38,4 +38,7 @@ urlpatterns = [
     path('chat/conversations/<int:conversation_id>/', views.ConversationDetailView.as_view(), name='conversation-detail'),
     path('tasks/<uuid:task_id>/', views.TaskStatusView.as_view(), name='task-status'),
     path('tasks/<uuid:task_id>/cancel/', views.TaskCancelView.as_view(), name='task-cancel'),
+    path('evaluate/generate/', views.GenerateEvaluationDataView.as_view(), name='evaluate-generate'),
+    path('evaluate/run/', views.RunEvaluationView.as_view(), name='evaluate-run'),
+    path('evaluate/results/', views.EvaluationResultsView.as_view(), name='evaluate-results'),
 ]

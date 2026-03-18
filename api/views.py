@@ -1,4 +1,4 @@
-﻿import requests as http_requests
+import requests as http_requests
 import os
 import socket
 import ipaddress
@@ -1688,4 +1688,106 @@ class TaskCancelView(APIView):
         )
 
 
+import json
+import random
+import re
+import os
+from rest_framework.exceptions import APIException
 
+class EvaluationError(APIException):
+    status_code = 400
+    default_detail = 'Evaluation Failed.'
+    default_code = 'evaluation_failed'
+
+class GenerateEvaluationDataView(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        num_questions = int(request.data.get('num_questions', 5))
+        try:
+            from api.models import EvaluationDataset, UserProfile
+            from api.generator import generate_answer
+            ensure_documents_loaded(request.user)
+            if not docs:
+                raise EvaluationError("No documents found. Please upload documents first.")
+
+            sampled_chunks = random.sample(docs, min(num_questions * 2, len(docs)))
+            profile = UserProfile.objects.get(user=request.user)
+            new_items = []
+
+            for chunk in sampled_chunks[:num_questions]:
+                prompt = f"Given the following text, generate exactly one specific question that can be answered using ONLY this text. Also provide the expected answer. Return the result in rigid JSON format with keys 'question' and 'expected_answer'.\n\nText: {chunk}"
+                try:
+                    response = generate_answer(prompt, [], provider=profile.llm_provider, model=profile.llm_model, api_key=profile.llm_api_key)
+                    json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                    if json_match:
+                        qa_data = json.loads(json_match.group(0))
+                        if qa_data.get("question") and qa_data.get("expected_answer"):
+                            item = EvaluationDataset.objects.create(
+                                user=request.user, question=qa_data.get("question"), expected_answer=qa_data.get("expected_answer"), reference_context=chunk
+                            )
+                            new_items.append(item)
+                except Exception as e: print(f"Failed to generate QA for chunk: {e}")
+
+            return Response({"message": f"Generated {len(new_items)} questions.", "count": len(new_items)}, status=status.HTTP_200_OK)
+        except EvaluationError as e: return Response({"error": str(e)}, status=e.status_code)
+        except Exception as e: return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class RunEvaluationView(APIView):
+    permission_classes = [IsAuthenticated]
+    def post(self, request):
+        dataset_id = request.data.get('dataset_id')
+        try:
+            from api.models import EvaluationDataset, EvaluationResult, UserProfile
+            from api.generator import generate_answer
+            from deepeval.metrics import FaithfulnessMetric, AnswerRelevancyMetric, ContextualRelevancyMetric
+            from deepeval.test_case import LLMTestCase
+            
+            items = EvaluationDataset.objects.filter(id=dataset_id, user=request.user) if dataset_id else EvaluationDataset.objects.filter(user=request.user).order_by('-created_at')[:10]
+            if not items.exists():
+                raise EvaluationError("No evaluation dataset found for this user. Generate one first.")
+                
+            ensure_documents_loaded(request.user)
+            profile = UserProfile.objects.get(user=request.user)
+
+            try:
+                metrics = [FaithfulnessMetric(threshold=0.5, include_reason=False), AnswerRelevancyMetric(threshold=0.5, include_reason=False), ContextualRelevancyMetric(threshold=0.5, include_reason=False)]
+            except Exception as e: raise EvaluationError(f"Failed to initialize metrics. DeepEval requires OPENAI_API_KEY environment variable. Error: {e}")
+
+            if profile.llm_provider == "openai" and profile.llm_api_key:
+                os.environ["OPENAI_API_KEY"] = profile.llm_api_key
+
+            results = []
+            for item in items:
+                try:
+                    top_chunks, top_indices = search(item.question, docs, index, embeddings, top_k=3)
+                    actual_answer = generate_answer(item.question, top_chunks, provider=profile.llm_provider, model=profile.llm_model, api_key=profile.llm_api_key)
+                    test_case = LLMTestCase(input=item.question, actual_output=actual_answer, retrieval_context=top_chunks, expected_output=item.expected_answer)
+                    
+                    f_score, a_score, c_score = 0.0, 0.0, 0.0
+                    try: metrics[0].measure(test_case); f_score = metrics[0].score
+                    except: pass
+                    try: metrics[1].measure(test_case); a_score = metrics[1].score
+                    except: pass
+                    try: metrics[2].measure(test_case); c_score = metrics[2].score
+                    except: pass
+                    
+                    result = EvaluationResult.objects.create(
+                        user=request.user, dataset_item=item, question=item.question, actual_answer=actual_answer,
+                        retrieved_context=top_chunks, faithfulness_score=f_score, answer_relevance_score=a_score, context_relevancy_score=c_score
+                    )
+                    results.append({"question": result.question, "faithfulness": result.faithfulness_score, "answer_relevancy": result.answer_relevance_score, "context_relevancy": result.context_relevancy_score})
+                except Exception as e:
+                    EvaluationResult.objects.create(user=request.user, dataset_item=item, question=item.question, actual_answer="", error=str(e))
+                    results.append({"question": item.question, "error": str(e)})
+                    
+            return Response({"message": "Evaluation complete", "results": results}, status=status.HTTP_200_OK)
+        except EvaluationError as e: return Response({"error": str(e)}, status=e.status_code)
+        except Exception as e: return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class EvaluationResultsView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        from api.models import EvaluationResult
+        results = EvaluationResult.objects.filter(user=request.user).order_by('-created_at')[:20]
+        data = [{"id": r.id, "question": r.question, "faithfulness": r.faithfulness_score, "answer_relevance": r.answer_relevance_score, "context_relevancy": r.context_relevancy_score, "actual_answer": r.actual_answer, "error": r.error, "created_at": str(r.created_at)} for r in results]
+        return Response({"results": data}, status=status.HTTP_200_OK)

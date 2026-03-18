@@ -142,3 +142,36 @@ class Task(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.task_type} - {self.status}"
+
+""" EVALUATION DATASET MODEL """
+class EvaluationDataset(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='evaluation_datasets')
+    question = models.TextField()
+    expected_answer = models.TextField(blank=True, default='')
+    reference_context = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username}: {self.question[:50]}"
+
+""" EVALUATION RESULT MODEL """
+class EvaluationResult(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='evaluation_results')
+    dataset_item = models.ForeignKey(EvaluationDataset, on_delete=models.SET_NULL, null=True, blank=True)
+    question = models.TextField()
+    actual_answer = models.TextField()
+    retrieved_context = models.JSONField(default=list)
+    faithfulness_score = models.FloatField(null=True, blank=True)
+    answer_relevance_score = models.FloatField(null=True, blank=True)
+    context_relevancy_score = models.FloatField(null=True, blank=True)
+    error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username}: {self.question[:50]} - Faithfulness: {self.faithfulness_score}"

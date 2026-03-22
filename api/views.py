@@ -1255,17 +1255,38 @@ class ChatFeedbackView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         comment = request.data.get('comment', '')
+        failure_tag = request.data.get('failure_tag', '')
+        defaults = {'rating': rating, 'comment': comment}
+        if failure_tag:
+            defaults['failure_tag'] = failure_tag
         feedback, created = ChatFeedback.objects.update_or_create(
             chat=chat,
-            defaults={'rating':  rating, 'comment': comment},
+            defaults=defaults,
         )
         return Response({
             'message': 'Feedback submitted.' if created else 'Feedback updated.',
             'chat_id': chat.id,
             'rating': feedback.rating,
             'comment': feedback.comment,
+            'failure_tag': feedback.failure_tag,
             'created_at': feedback.created_at,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+class HardQueriesView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        entries = ChatFeedback.objects.filter(
+            chat__user=request.user, rating='down'
+        ).select_related('chat').order_by('-created_at')[:50]
+        data = [{
+            'chat_id': e.chat.id,
+            'question': e.chat.question,
+            'answer': e.chat.answer,
+            'failure_tag': e.failure_tag,
+            'comment': e.comment,
+            'created_at': e.created_at,
+        } for e in entries]
+        return Response({'hard_queries': data}, status=status.HTTP_200_OK)
 
 """ CHAT CITATIONS VIEW """
 class ChatCitationsView(APIView):

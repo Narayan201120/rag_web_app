@@ -95,6 +95,7 @@ function Chat() {
     const [question, setQuestion] = useState('');
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [feedbackState, setFeedbackState] = useState({});
     const [conversationId, setConversationId] = useState(null);
     const [conversations, setConversations] = useState([]);
     const [showHistory, setShowHistory] = useState(false);
@@ -173,6 +174,7 @@ function Chat() {
             setMessages((prev) => [
                 ...prev,
                 {
+                    id: res.data.id,
                     question,
                     answer: res.data.answer,
                     sources: res.data.sources,
@@ -213,6 +215,16 @@ function Chat() {
     const newConversation = () => {
         setConversationId(null);
         setMessages([]);
+        setFeedbackState({});
+    };
+
+    const submitFeedback = async (chatId, rating) => {
+        try {
+            await requestWithRefresh((headers) => axios.post(`${API}/chat/${chatId}/feedback/`, { rating }, { headers }));
+            setFeedbackState((prev) => ({ ...prev, [chatId]: rating }));
+        } catch (err) {
+            console.error('Feedback failed:', err);
+        }
     };
 
     return (
@@ -266,6 +278,20 @@ function Chat() {
                             <p className="question">{msg.question}</p>
                             <div className="answer markdown-content">{renderAnswerMarkdown(msg.answer)}</div>
                             <p className="sources">Sources: {msg.sources?.join(', ')}</p>
+                            {msg.id && (
+                                <div className="feedback-buttons">
+                                    <button
+                                        className={`fb-btn${feedbackState[msg.id] === 'up' ? ' active' : ''}`}
+                                        onClick={() => submitFeedback(msg.id, 'up')}
+                                        title="Helpful"
+                                    >👍</button>
+                                    <button
+                                        className={`fb-btn${feedbackState[msg.id] === 'down' ? ' active' : ''}`}
+                                        onClick={() => submitFeedback(msg.id, 'down')}
+                                        title="Not helpful"
+                                    >👎</button>
+                                </div>
+                            )}
                         </div>
                     ))}
                     {loading && <p className="loading">Thinking...</p>}

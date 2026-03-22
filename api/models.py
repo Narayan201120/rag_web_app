@@ -37,9 +37,16 @@ class ChatFeedback(models.Model):
         ('up', 'Thumbs Up'),
         ('down', 'Thumbs Down'),
     ]
+    FAILURE_TAG_CHOICES = [
+        ('bad_retrieval', 'Bad Retrieval'),
+        ('hallucination', 'Hallucination'),
+        ('incomplete', 'Incomplete'),
+        ('other', 'Other'),
+    ]
     chat = models.OneToOneField(ChatMessage, on_delete=models.CASCADE, related_name='feedback')
     rating = models.CharField(max_length=4, choices=RATING_CHOICES)
     comment = models.TextField(blank=True, default='')
+    failure_tag = models.CharField(max_length=20, choices=FAILURE_TAG_CHOICES, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

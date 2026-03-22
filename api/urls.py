@@ -25,6 +25,7 @@ urlpatterns = [
     path('ingest/', views.IngestView.as_view(), name='ingest'),
     path('status/', views.StatusView.as_view(), name='status'),
     path('chat/<int:chat_id>/feedback/', views.ChatFeedbackView.as_view(), name='chat-feedback'),
+    path('feedback/hard-queries/', views.HardQueriesView.as_view(), name='hard-queries'),
     path('chat/<int:chat_id>/citations/', views.ChatCitationsView.as_view(), name='chat-citations'),
     path('collections/', views.CollectionsView.as_view(), name='collections'),
     path('documents/<str:filename>/move/', views.MoveDocumentView.as_view(), name='move-document'),

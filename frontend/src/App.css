@@ -496,6 +496,34 @@ button {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.feedback-buttons {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.fb-btn {
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 1rem;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: all 0.2s;
+}
+
+.fb-btn:hover {
+  opacity: 1;
+  background: var(--surface-2);
+}
+
+.fb-btn.active {
+  opacity: 1;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .loading {
   color: var(--accent-deep);
 }

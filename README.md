@@ -47,7 +47,7 @@ A full-stack Retrieval-Augmented Generation (RAG) application that lets you uplo
 ```bash
 # 1. Clone and create virtual environment
 git clone https://github.com/Narayan201120/rag_web_app.git
-cd rag_web_app
+cd rag_web_app/backend
 python -m venv venv
 venv\Scripts\activate        # Windows
 # source venv/bin/activate   # macOS/Linux
@@ -79,7 +79,7 @@ The app is available at `http://localhost:3000`.
 
 ## Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the `backend/` directory:
 
 ```env
 # Django
@@ -126,15 +126,18 @@ DJANGO_CORS_ALLOWED_ORIGINS=http://localhost:3000
 
 ```
 rag_web_app/
-├── api/                  # Django app (views, models, serializers, tasks)
-│   ├── views.py          # All API endpoints + web scraping + RAG pipeline
-│   ├── generator.py      # LLM provider routing
-│   ├── retriever.py      # FAISS index + embedding logic
-│   └── models.py         # UserProfile, ChatHistory, Collection, Task
-├── config/               # Django project settings and URL config
-├── frontend/             # React application
-│   └── src/components/   # Login, Signup, Chat, Documents, Search, Settings, Admin
-└── requirements.txt
+├── backend/                # Django backend
+│   ├── api/                # Django app (views, models, serializers, tasks)
+│   │   ├── views.py        # All API endpoints + web scraping + RAG pipeline
+│   │   ├── generator.py    # LLM provider routing
+│   │   ├── retriever.py    # FAISS index + embedding logic
+│   │   └── models.py       # UserProfile, ChatHistory, Collection, Task
+│   ├── config/             # Django project settings and URL config
+│   ├── manage.py
+│   └── requirements.txt
+├── frontend/               # React application
+│   └── src/components/     # Login, Signup, Chat, Documents, Search, Settings, Admin
+└── render.yaml             # Render deployment config
 ```
 
 ---
@@ -142,11 +145,10 @@ rag_web_app/
 ## Running Tests
 
 ```bash
-# Backend
+# Backend (from backend/ directory)
 venv\Scripts\python.exe manage.py test
 
-# Frontend
-cd frontend
+# Frontend (from frontend/ directory)
 npm.cmd run test:ci
 ```
 

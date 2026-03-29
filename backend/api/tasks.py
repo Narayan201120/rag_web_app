@@ -1,4 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor
+import importlib
+
+from celery import shared_task
 from django.db import close_old_connections
 from django.utils import timezone
 
@@ -9,14 +11,15 @@ class TaskCancelled(Exception):
     pass
 
 
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="rag-task")
-
-
 def submit_task(task_id, job_fn, *args, **kwargs):
-    _executor.submit(_run_task, task_id, job_fn, *args, **kwargs)
+    """Thin wrapper that keeps the same interface views already call.
+    Converts the callable to a dotted path so Celery can serialize it."""
+    fn_path = f"{job_fn.__module__}.{job_fn.__qualname__}"
+    _run_task.delay(str(task_id), fn_path, args, kwargs)
 
 
-def _run_task(task_id, job_fn, *args, **kwargs):
+@shared_task(ignore_result=True)
+def _run_task(task_id, fn_path, args, kwargs):
     close_old_connections()
     try:
         task = Task.objects.get(id=task_id)
@@ -48,6 +51,11 @@ def _run_task(task_id, job_fn, *args, **kwargs):
             updates.append("message")
         if updates:
             task.save(update_fields=updates + ["updated_at"])
+
+    # Resolve the job function from its dotted path
+    module_path, fn_name = fn_path.rsplit(".", 1)
+    module = importlib.import_module(module_path)
+    job_fn = getattr(module, fn_name)
 
     try:
         result = job_fn(update=update, is_cancelled=is_cancelled, *args, **kwargs) or {}

@@ -18,3 +18,5 @@ gunicorn
 whitenoise
 django-cors-headers
 deepeval
+celery[redis]
+redis

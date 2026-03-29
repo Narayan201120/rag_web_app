@@ -41,17 +41,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run migrations
-        env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-          DJANGO_DB_SSL_REQUIRE: "false"
-        run: python manage.py migrate --noinput
-
       - name: Run tests
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           DJANGO_DB_SSL_REQUIRE: "false"
-        run: python manage.py test
+          DJANGO_DEBUG: "true"
+        run: python manage.py test --verbosity=2
 
   frontend-tests:
     runs-on: ubuntu-latest
@@ -73,7 +68,9 @@ jobs:
         run: npm ci
 
       - name: Run tests
-        run: npx react-scripts test --watchAll=false --ci
+        env:
+          CI: true
+        run: npx react-scripts test --watchAll=false
 
       - name: Build
         run: npm run build

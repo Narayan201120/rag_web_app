@@ -22,6 +22,7 @@ documents/
 
 # ===== Static =====
 static/
+staticfiles/
 
 # ===== OS files =====
 .DS_Store

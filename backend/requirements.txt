@@ -20,3 +20,4 @@ django-cors-headers
 deepeval
 celery[redis]
 redis
+youtube-transcript-api

@@ -4,14 +4,16 @@ import socket
 import ipaddress
 import re
 import html as html_lib
-from urllib.parse import urlparse, unquote
+from urllib.parse import urlparse, unquote, parse_qs
 from pathlib import Path
 from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from api.retriever import build_index, search, rerank
+from api.retriever import build_index, search, rerank, get_embedding_model
 from api.generator import generate_answer, test_provider_connection, ProviderAPIError
+from api.chunker import semantic_chunk
+from api.compressor import compress_chunks
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
@@ -473,11 +475,15 @@ def load_documents(user, progress_callback=None, is_cancelled=None):
             continue
         if not content or not content.strip():
             continue
-        paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
-        if not paragraphs:
-            paragraphs = [content.strip()]
-        for para in paragraphs:
-            docs.append(para)
+        try:
+            chunks = semantic_chunk(content, get_embedding_model())
+        except Exception:
+            # Fallback to naive paragraph splitting if semantic chunking fails.
+            chunks = [p.strip() for p in content.split("\n\n") if p.strip()]
+        if not chunks:
+            chunks = [content.strip()]
+        for chunk in chunks:
+            docs.append(chunk)
             chunk_sources.append(filename)
         if progress_callback:
             progress = 55 + int((idx / total_files) * 35)
@@ -501,6 +507,31 @@ def ensure_documents_loaded(user, force=False):
         _current_user_id = user.id
 
 
+def _is_youtube_url(url):
+    """Return the video ID if url is a YouTube video URL, else None."""
+    parsed = urlparse((url or "").strip())
+    hostname = (parsed.hostname or "").lower().replace("www.", "")
+    if hostname in ("youtube.com", "m.youtube.com"):
+        video_id = parse_qs(parsed.query).get("v", [None])[0]
+        return video_id if video_id else None
+    if hostname == "youtu.be":
+        video_id = parsed.path.lstrip("/").split("/")[0]
+        return video_id if video_id else None
+    return None
+
+
+def _fetch_youtube_transcript(video_id):
+    """Fetch the transcript for a YouTube video and return timestamped text."""
+    from youtube_transcript_api import YouTubeTranscriptApi
+    snippets = YouTubeTranscriptApi.get_transcript(video_id)
+    lines = []
+    for entry in snippets:
+        seconds = int(entry["start"])
+        mm, ss = divmod(seconds, 60)
+        lines.append(f"[{mm:02d}:{ss:02d}] {entry['text']}")
+    return "\n".join(lines)
+
+
 def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
     clean_url = (url or "").strip()
     if not clean_url:
@@ -513,6 +544,18 @@ def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
 
     if update:
         update(15, "Downloading URL content...")
+
+    # YouTube transcript ingestion
+    video_id = _is_youtube_url(clean_url)
+    if video_id:
+        if update:
+            update(25, "Fetching YouTube transcript...")
+        transcript_text = _fetch_youtube_transcript(video_id)
+        filename = f"youtube_{video_id}.md"
+        filepath = os.path.join(user_dir, filename)
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(transcript_text)
+        return filename
 
     parsed = urlparse(clean_url)
     # Wikipedia often blocks generic HTML scraping with 403.
@@ -675,8 +718,22 @@ class AskView(APIView):
                 {"error": "No indexed documents found. Upload documents and run ingestion first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = search(question, docs, index, embeddings, top_k=3)
+        top_chunks, top_indices = search(question, docs, index, embeddings, top_k=10)
         sources = [chunk_sources[i] for i in top_indices]
+
+        # Rerank to top-3 for higher precision.
+        reranked = rerank(question, top_chunks, top_k=3)
+        reranked_chunks = [r["chunk"] for r in reranked]
+        reranked_sources = [sources[r["index"]] for r in reranked] if reranked else sources[:3]
+
+        # Compress chunks to keep only query-relevant sentences.
+        try:
+            compressed = compress_chunks(question, reranked_chunks, get_embedding_model())
+        except Exception:
+            compressed = reranked_chunks
+
+        final_chunks = compressed if compressed else reranked_chunks
+        final_sources = reranked_sources
         try:
             profile, _ = UserProfile.objects.get_or_create(user=request.user)
             allowed_models = PROVIDER_MODELS.get(profile.llm_provider, [])
@@ -687,7 +744,7 @@ class AskView(APIView):
                 )
             answer = generate_answer(
                 question,
-                top_chunks,
+                final_chunks,
                 provider=profile.llm_provider,
                 model=profile.llm_model,
                 api_key=profile.llm_api_key,
@@ -707,7 +764,7 @@ class AskView(APIView):
                 {"error": "The answer service is temporarily unavailable. Please try again later."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
-        return Response({"answer":answer, "sources":list(dict.fromkeys(sources))}, status=status.HTTP_200_OK)
+        return Response({"answer":answer, "sources":list(dict.fromkeys(final_sources))}, status=status.HTTP_200_OK)
 
 """ SIGN-UP VIEW """
 class SignUpView(APIView):

@@ -1,4 +1,4 @@
-﻿from django.test import TestCase
+from django.test import TestCase
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import default_token_generator
@@ -11,6 +11,7 @@ from unittest.mock import patch
 from types import SimpleNamespace
 import os
 import shutil
+import numpy as np
 
 from api import views as api_views
 from api.models import APIUsageLog, Conversation, ChatMessage, Task, Collection, Document
@@ -677,3 +678,118 @@ class URLParsingHelperTests(TestCase):
         """
         md = api_views._extract_markdown_from_html(html)
         self.assertIn("$f_{c}(z)=z^{2}+c$", md)
+
+
+class YouTubeIngestionTests(TestCase):
+    def test_is_youtube_url_detects_standard_url(self):
+        result = api_views._is_youtube_url("https://www.youtube.com/watch?v=aircAruvnKk")
+        self.assertEqual(result, "aircAruvnKk")
+
+    def test_is_youtube_url_detects_short_url(self):
+        result = api_views._is_youtube_url("https://youtu.be/aircAruvnKk")
+        self.assertEqual(result, "aircAruvnKk")
+
+    def test_is_youtube_url_returns_none_for_non_youtube(self):
+        result = api_views._is_youtube_url("https://example.com")
+        self.assertIsNone(result)
+
+    @patch("api.views.submit_task")
+    @patch("api.views._is_safe_user_url")
+    def test_upload_url_creates_task_for_youtube_url(self, mock_is_safe, mock_submit_task):
+        mock_is_safe.return_value = True
+        user = User.objects.create_user(username="yt_user", password="pass12345")
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        response = client.post(
+            "/api/upload-url/",
+            {"url": "https://www.youtube.com/watch?v=aircAruvnKk"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        created_task = Task.objects.get(user=user, task_type="url_ingest")
+        self.assertEqual(created_task.status, "pending")
+        mock_submit_task.assert_called_once()
+
+
+class SemanticChunkingTests(TestCase):
+    """Tests for the semantic_chunk function in chunker.py."""
+
+    def setUp(self):
+        # Use a lightweight mock model for testing.
+        self.mock_model = type("MockModel", (), {
+            "encode": lambda self, texts, **kw: np.array(
+                [[float(i)] * 384 for i in range(len(texts))], dtype=np.float32
+            ),
+        })()
+
+    def test_empty_text_returns_empty_list(self):
+        from api.chunker import semantic_chunk
+        result = semantic_chunk("", self.mock_model)
+        self.assertEqual(result, [])
+
+    def test_single_sentence_returns_one_chunk(self):
+        from api.chunker import semantic_chunk
+        result = semantic_chunk("This is a single sentence.", self.mock_model)
+        self.assertEqual(len(result), 1)
+        self.assertIn("single sentence", result[0])
+
+    def test_multiple_sentences_produce_chunks(self):
+        from api.chunker import semantic_chunk
+        text = (
+            "Machine learning is a subset of AI. "
+            "It uses statistical methods. "
+            "Deep learning uses neural networks. "
+            "Transformers revolutionized NLP. "
+            "BERT is a popular model."
+        )
+        result = semantic_chunk(text, self.mock_model)
+        self.assertGreaterEqual(len(result), 1)
+        # All original content should be preserved.
+        combined = " ".join(result)
+        self.assertIn("Machine learning", combined)
+        self.assertIn("BERT", combined)
+
+
+class ContextCompressionTests(TestCase):
+    """Tests for the compress_chunks function in compressor.py."""
+
+    def test_empty_chunks_returns_empty(self):
+        from api.compressor import compress_chunks
+        mock_model = type("MockModel", (), {
+            "encode": lambda self, texts, **kw: np.array(
+                [[1.0] * 384 for _ in texts], dtype=np.float32
+            ),
+        })()
+        result = compress_chunks("query", [], mock_model)
+        self.assertEqual(result, [])
+
+    def test_short_chunks_are_kept_as_is(self):
+        from api.compressor import compress_chunks
+        mock_model = type("MockModel", (), {
+            "encode": lambda self, texts, **kw: np.array(
+                [[1.0] * 384 for _ in texts], dtype=np.float32
+            ),
+        })()
+        result = compress_chunks("query", ["Short chunk."], mock_model)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0], "Short chunk.")
+
+    def test_compression_preserves_at_least_one_sentence(self):
+        from api.compressor import compress_chunks
+        # Model returns different embeddings per sentence so similarity
+        # between query and most sentences is low.
+        call_count = [0]
+        def mock_encode(texts, **kw):
+            call_count[0] += 1
+            return np.array(
+                [[float(i + call_count[0])] * 384 for i in range(len(texts))],
+                dtype=np.float32,
+            )
+        mock_model = type("MockModel", (), {"encode": lambda self, t, **kw: mock_encode(t, **kw)})()
+        chunk = "First sentence here. Second sentence here. Third sentence here. Fourth sentence here."
+        result = compress_chunks("some query", [chunk], mock_model)
+        self.assertGreaterEqual(len(result), 1)
+
+

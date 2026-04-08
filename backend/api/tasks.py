@@ -13,9 +13,19 @@ class TaskCancelled(Exception):
 
 def submit_task(task_id, job_fn, *args, **kwargs):
     """Thin wrapper that keeps the same interface views already call.
-    Converts the callable to a dotted path so Celery can serialize it."""
+    Converts the callable to a dotted path so Celery can serialize it.
+    Falls back to synchronous execution if the Celery broker is unavailable."""
     fn_path = f"{job_fn.__module__}.{job_fn.__qualname__}"
-    _run_task.delay(str(task_id), fn_path, args, kwargs)
+    try:
+        _run_task.delay(str(task_id), fn_path, args, kwargs)
+    except Exception:
+        # Broker unavailable (no Redis) — run synchronously in a thread
+        import threading
+        threading.Thread(
+            target=_run_task,
+            args=(str(task_id), fn_path, args, kwargs),
+            daemon=True,
+        ).start()
 
 
 @shared_task(ignore_result=True)

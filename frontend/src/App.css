@@ -1,23 +1,59 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+/* ========================================
+   RAG APP — Warm Dark Theme
+   Inspired by Claude's design system:
+   - Warm olive-tinted darks (no cool zinc)
+   - Terracotta brand accent (#c96442)
+   - Serif headings (Source Serif 4)
+   - Ring-based shadows
+   - Editorial spacing & line-heights
+   ======================================== */
 
 :root {
-  --bg: #09090b;
-  --bg-deep: #000000;
-  --surface: #09090b;
-  --surface-2: #27272a;
-  --ink: #fafafa;
-  --muted: #a1a1aa;
-  --line: #27272a;
-  --accent: #fafafa;
-  --accent-ink: #18181b;
-  --accent-hover: #e4e4e7;
-  --accent-deep: #27272a;
-  --accent-soft: rgba(255, 255, 255, 0.05);
-  --ok: #22c55e;
+  /* Surfaces — warm olive darks */
+  --bg: #141413;
+  --bg-deep: #0e0e0d;
+  --surface: #1c1c1a;
+  --surface-2: #2a2a27;
+  --surface-3: #30302e;
+
+  /* Text — warm-tinted */
+  --ink: #faf9f5;
+  --ink-secondary: #b0aea5;
+  --muted: #87867f;
+  --muted-soft: #5e5d59;
+
+  /* Borders — warm, not cool */
+  --line: #30302e;
+  --line-subtle: #252523;
+  --line-strong: #3d3d3a;
+
+  /* Brand accent — terracotta */
+  --accent: #c96442;
+  --accent-hover: #d97757;
+  --accent-ink: #faf9f5;
+  --accent-soft: rgba(201, 100, 66, 0.12);
+  --accent-ring: rgba(201, 100, 66, 0.3);
+
+  /* Semantic */
+  --ok: #5a9e6f;
   --destructive: #7f1d1d;
   --destructive-ink: #fca5a5;
-  --ring: rgba(255, 255, 255, 0.2);
-  --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --error: #b53333;
+
+  /* Shadows & rings */
+  --ring: rgba(201, 100, 66, 0.25);
+  --ring-subtle: rgba(255, 255, 255, 0.06);
+  --ring-warm: #4d4c48;
+  --card-shadow: 0 0 0 1px var(--line);
+  --whisper-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+
+  /* Radius — generous, soft */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
   color-scheme: dark;
 }
 
@@ -38,18 +74,26 @@ body {
   background: var(--bg);
 }
 
+/* ========================================
+   LAYOUT
+   ======================================== */
+
 .App {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 260px 1fr;
 }
 
+/* ========================================
+   SIDEBAR
+   ======================================== */
+
 .app-sidebar {
   position: sticky;
   top: 0;
   height: 100vh;
   border-right: 1px solid var(--line);
-  background: var(--surface);
+  background: var(--bg-deep);
   display: flex;
   flex-direction: column;
 }
@@ -61,53 +105,58 @@ body {
 
 .brand-name {
   display: block;
-  font-size: 1.9rem;
-  line-height: 1;
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 2rem;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
 }
 
 .brand-tag {
   display: block;
   margin-top: 8px;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-family: "IBM Plex Mono", monospace;
+  font-weight: 400;
 }
 
 .sidebar-nav {
   padding: 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   flex: 1;
 }
 
 .sidebar-nav button {
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--muted);
+  color: var(--ink-secondary);
   font: inherit;
   font-size: 0.9rem;
   font-weight: 500;
-  padding: 8px 12px;
+  padding: 10px 12px;
   display: flex;
   align-items: center;
   gap: 10px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .sidebar-nav button:hover {
-  background: var(--accent-soft);
+  background: var(--surface-2);
   color: var(--ink);
 }
 
 .sidebar-nav button.active {
   background: var(--surface-2);
   color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
 .nav-icon {
@@ -116,12 +165,111 @@ body {
   justify-content: center;
   min-width: 32px;
   height: 24px;
-  border-radius: 4px;
-  background: var(--surface-2);
-  color: var(--ink);
-  font-size: 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 0.6rem;
   letter-spacing: 0.05em;
   font-family: "IBM Plex Mono", monospace;
+  font-weight: 500;
+}
+
+/* ========================================
+   SIDEBAR — Chat History
+   ======================================== */
+
+.sidebar-history {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px 8px;
+}
+
+.sidebar-history-label {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.new-chat-sidebar-btn {
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.new-chat-sidebar-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.sidebar-conversation-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 4px 8px;
+}
+
+.sidebar-conv-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: 2px;
+}
+
+.sidebar-conv-item:hover {
+  background: var(--surface-2);
+}
+
+.sidebar-conv-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.sidebar-conv-title {
+  font-size: 0.82rem;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.sidebar-conv-item.active .sidebar-conv-title {
+  color: var(--ink);
+}
+
+.sidebar-conv-meta {
+  font-size: 0.65rem;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  white-space: nowrap;
+}
+
+.sidebar-conv-empty {
+  font-size: 0.75rem;
+  color: var(--muted-soft);
+  padding: 16px 10px;
 }
 
 .sidebar-footer {
@@ -136,31 +284,34 @@ body {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-family: "IBM Plex Mono", monospace;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #abb0c2;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--muted-soft);
 }
 
 .status-dot.online {
   background: var(--ok);
+  box-shadow: 0 0 6px rgba(90, 158, 111, 0.4);
 }
 
 .sidebar-logout {
   border: 1px solid var(--line);
   background: transparent;
-  color: var(--ink);
-  border-radius: 8px;
+  color: var(--ink-secondary);
+  border-radius: var(--radius-md);
   padding: 8px 12px;
   font-weight: 500;
+  font-size: 0.85rem;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .sidebar-logout:hover {
@@ -168,12 +319,20 @@ body {
   color: var(--accent);
 }
 
+/* ========================================
+   MAIN AREA
+   ======================================== */
+
 .app-main {
   min-width: 0;
   padding: 20px;
   height: 100vh;
   overflow: hidden;
 }
+
+/* ========================================
+   SHARED CONTAINER STYLING
+   ======================================== */
 
 .auth-container,
 .chat-container,
@@ -184,32 +343,40 @@ body {
 .admin-container {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
   box-shadow: var(--card-shadow);
 }
+
+/* ========================================
+   AUTH (Login / Signup)
+   ======================================== */
 
 .auth-container {
   min-height: 100vh;
   border-radius: 0;
   border: none;
-  background: transparent;
+  background: var(--bg);
   display: grid;
   place-content: center;
-  gap: 14px;
+  gap: 16px;
   padding: 28px;
 }
 
 .auth-container h1 {
   margin: 0;
   text-align: center;
-  letter-spacing: -0.04em;
-  font-size: clamp(1.7rem, 2.8vw, 2.5rem);
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+  line-height: 1.15;
+  color: var(--ink);
 }
 
 .auth-container form {
   width: min(420px, 100%);
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 input,
@@ -217,6 +384,10 @@ select,
 button {
   font: inherit;
 }
+
+/* ========================================
+   SHARED INPUTS
+   ======================================== */
 
 .auth-container input,
 .chat-container form input,
@@ -226,12 +397,13 @@ button {
 .setting-row select {
   width: 100%;
   border: 1px solid var(--line);
-  background: transparent;
-  border-radius: 6px;
+  background: var(--surface-2);
+  border-radius: var(--radius-md);
   color: var(--ink);
-  padding: 8px 12px;
+  padding: 10px 14px;
   font-size: 0.875rem;
   outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .auth-container input:focus,
@@ -239,9 +411,13 @@ button {
 .search-container form input:focus,
 .danger-zone input:focus,
 .upload-section input[type="text"]:focus {
-  border-color: var(--line);
-  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--ring);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
+
+/* ========================================
+   SHARED BUTTONS
+   ======================================== */
 
 .auth-container button[type="submit"],
 .chat-container form button,
@@ -249,14 +425,15 @@ button {
 .upload-section button,
 .save-btn {
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: var(--accent);
   color: var(--accent-ink);
-  padding: 8px 16px;
+  padding: 10px 18px;
   font-weight: 500;
   font-size: 0.875rem;
   cursor: pointer;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 0 1px var(--accent);
+  transition: all 0.2s ease;
 }
 
 .auth-container button[type="submit"]:hover,
@@ -265,22 +442,28 @@ button {
 .upload-section button:hover,
 .save-btn:hover {
   background: var(--accent-hover);
+  box-shadow: 0 0 0 1px var(--accent-hover);
 }
 
 .switch {
   text-align: center;
   color: var(--muted);
+  font-size: 0.9rem;
 }
 
 .switch span {
-  color: var(--accent-deep);
+  color: var(--accent);
   font-weight: 600;
   cursor: pointer;
 }
 
+.switch span:hover {
+  color: var(--accent-hover);
+}
+
 .error {
   margin: 0;
-  color: #c9384d;
+  color: var(--error);
   font-size: 0.87rem;
 }
 
@@ -290,91 +473,38 @@ button {
   font-size: 0.87rem;
 }
 
+/* ========================================
+   CHAT — Layout
+   ======================================== */
+
 .chat-page {
   display: grid;
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 1fr;
   height: 100%;
   min-height: 0;
-  gap: 16px;
 }
 
-.chat-sidebar {
-  position: relative;
-  width: 0;
-  min-width: 0;
-  opacity: 0;
-  pointer-events: none;
+
+.new-chat-btn {
   border: 1px solid var(--line);
-  background: var(--surface);
-  border-radius: 18px;
-  overflow: hidden;
-  z-index: 20;
-}
-
-.chat-sidebar.open {
-  width: 300px;
-  min-width: 300px;
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.chat-page.history-open {
-  grid-template-columns: 300px 1fr;
-}
-
-.sidebar-header {
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-}
-
-.close-sidebar,
-.history-toggle,
-.new-chat-btn,
-.new-chat-sidebar {
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--ink);
-  padding: 8px 12px;
+  padding: 6px 12px;
   cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
 }
 
-.new-chat-sidebar {
-  margin: 10px;
-  width: calc(100% - 20px);
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.conversation-list {
-  overflow: auto;
-  height: calc(100% - 98px);
-}
-
-.conversation-item {
-  padding: 12px 14px;
-  border-top: 1px solid var(--line);
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  cursor: pointer;
-}
-
-.conversation-item.active {
+.new-chat-btn:hover {
   background: var(--surface-2);
+  border-color: var(--line-strong);
 }
 
-.conv-title {
-  font-size: 0.92rem;
-}
-
-.conv-meta {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
+/* ========================================
+   CHAT — Container
+   ======================================== */
 
 .chat-container {
   display: grid;
@@ -405,23 +535,31 @@ button {
 .account-container h2,
 .admin-container h2 {
   margin: 0;
-  font-size: clamp(1.25rem, 2vw, 1.6rem);
-  letter-spacing: -0.03em;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: clamp(1.3rem, 2vw, 1.7rem);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--ink);
 }
 
+/* ========================================
+   CHAT — Messages
+   ======================================== */
+
 .messages {
-  padding: 18px 20px;
+  padding: 20px 24px;
   overflow: auto;
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .message {
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line-subtle);
 }
 
 .message:last-child {
@@ -431,24 +569,26 @@ button {
 .question {
   margin: 0 0 16px;
   padding: 12px 16px;
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-md);
   background: var(--surface-2);
   border: 1px solid var(--line);
   font-weight: 500;
   font-size: 0.95rem;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--ink);
 }
 
 .answer {
   margin: 0;
   line-height: 1.6;
+  color: var(--ink-secondary);
 }
 
 .markdown-content {
-  font-family: 'DM Sans', sans-serif;
-  /* Back to sans-serif per modern UI */
+  font-family: 'Inter', sans-serif;
   font-size: 0.95rem;
-  line-height: 1.6;
+  line-height: 1.7;
+  color: var(--ink-secondary);
 }
 
 .markdown-content h1,
@@ -456,19 +596,28 @@ button {
 .markdown-content h3,
 .markdown-content p,
 .markdown-content ul {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
 }
 
 .markdown-content h1 {
+  font-family: 'Source Serif 4', Georgia, serif;
   font-size: 1.45rem;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .markdown-content h2 {
+  font-family: 'Source Serif 4', Georgia, serif;
   font-size: 1.3rem;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .markdown-content h3 {
+  font-family: 'Source Serif 4', Georgia, serif;
   font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .markdown-content ul {
@@ -477,45 +626,52 @@ button {
 
 .markdown-content code {
   font-family: "IBM Plex Mono", monospace;
-  background: var(--surface-2);
-  padding: 1px 4px;
-  border-radius: 4px;
+  background: var(--surface-3);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.88em;
+  color: var(--accent-hover);
 }
 
 .markdown-content .math-inline {
   font-style: italic;
-  background: var(--surface-2);
-  border-radius: 4px;
-  padding: 0 3px;
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  padding: 0 4px;
 }
 
 .sources {
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-family: "IBM Plex Mono", monospace;
 }
+
+/* ========================================
+   CHAT — Feedback
+   ======================================== */
 
 .feedback-buttons {
   display: flex;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .fb-btn {
   border: 1px solid var(--line);
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 4px 10px;
   font-size: 1rem;
   cursor: pointer;
-  opacity: 0.5;
-  transition: all 0.2s;
+  opacity: 0.45;
+  transition: all 0.2s ease;
 }
 
 .fb-btn:hover {
   opacity: 1;
   background: var(--surface-2);
+  border-color: var(--line-strong);
 }
 
 .fb-btn.active {
@@ -525,8 +681,13 @@ button {
 }
 
 .loading {
-  color: var(--accent-deep);
+  color: var(--accent);
+  font-style: italic;
 }
+
+/* ========================================
+   CHAT — Compose
+   ======================================== */
 
 .chat-container form {
   border-top: 1px solid var(--line);
@@ -539,7 +700,7 @@ button {
 .compose-icon-btn,
 .compose-send-btn {
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   width: 36px;
   height: 36px;
   display: inline-flex;
@@ -548,7 +709,7 @@ button {
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
 }
 
 .compose-icon-btn {
@@ -565,18 +726,23 @@ button {
   background: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .compose-send-btn:hover {
   background: var(--accent-hover);
+  box-shadow: 0 0 0 1px var(--accent-hover);
 }
 
 .chat-container form button:disabled,
 .search-container form button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ========================================
+   DOCUMENTS
+   ======================================== */
 
 .documents-container,
 .search-container,
@@ -585,7 +751,7 @@ button {
 .admin-container {
   width: min(980px, 100%);
   margin: 0 auto;
-  padding: 20px;
+  padding: 24px;
 }
 
 .documents-container .message {
@@ -606,21 +772,19 @@ button {
   align-items: center;
 }
 
-/* Custom File Upload Button Styles */
+/* Custom File Upload */
 .file-upload-label {
   display: flex;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--line);
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 6px 12px 6px 6px;
-  /* Slightly less padding on left for the inner button */
   cursor: pointer;
   min-width: 0;
-  /* allows truncation */
   flex-grow: 1;
-  /* Match the width of URL input */
+  transition: border-color 0.2s ease;
 }
 
 .file-upload-label:hover {
@@ -629,23 +793,25 @@ button {
 
 .file-upload-label:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+  box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .file-upload-btn {
-  background: var(--surface-2);
-  color: var(--ink);
+  background: var(--surface-3);
+  color: var(--ink-secondary);
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 0.85rem;
   font-weight: 500;
   border: 1px solid var(--line);
   white-space: nowrap;
+  transition: all 0.2s ease;
 }
 
 .file-upload-label:hover .file-upload-btn {
-  background: var(--accent-hover);
+  background: var(--accent);
   color: var(--accent-ink);
+  border-color: var(--accent);
 }
 
 .file-upload-text {
@@ -656,7 +822,6 @@ button {
   text-overflow: ellipsis;
 }
 
-/* Hide the native file input visually, but keep it accessible */
 .file-upload-input {
   position: absolute;
   width: 1px;
@@ -672,13 +837,13 @@ button {
 .doc-list h3,
 .settings-section h3,
 .admin-card h3 {
-  margin: 16px 0 8px;
-  font-size: 0.8rem;
+  margin: 18px 0 10px;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  font-family: inherit;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .doc-item {
@@ -687,7 +852,13 @@ button {
   align-items: center;
   gap: 16px;
   padding: 12px 8px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-subtle);
+  transition: background 0.15s ease;
+}
+
+.doc-item:hover {
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
 }
 
 .doc-item:last-child {
@@ -700,43 +871,52 @@ button {
 }
 
 .open-btn {
-  background: transparent;
+  background: var(--surface-2);
   border: 1px solid var(--line);
-  color: var(--ink);
-  border-radius: 6px;
-  padding: 6px 12px;
+  color: var(--ink-secondary);
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  transition: background-color 0.2s;
+  box-shadow: 0 0 0 1px var(--line);
+  transition: all 0.2s ease;
 }
 
 .open-btn:hover {
-  background: var(--surface-2);
+  background: var(--surface-3);
+  border-color: var(--line-strong);
+  color: var(--ink);
 }
 
 .delete-btn {
   border: 1px solid transparent;
   background: transparent;
   color: var(--destructive-ink);
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  opacity: 0.7;
 }
 
 .delete-btn:hover {
   background: var(--destructive);
   color: #fff;
+  opacity: 1;
 }
+
+/* ========================================
+   DOCUMENT PREVIEW MODAL
+   ======================================== */
 
 .doc-preview-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(20, 20, 26, 0.42);
+  background: rgba(14, 14, 13, 0.65);
+  backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
   z-index: 100;
@@ -746,12 +926,13 @@ button {
 .doc-preview-modal {
   width: min(920px, 100%);
   max-height: 85vh;
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   background: var(--surface);
   border: 1px solid var(--line);
   display: grid;
   grid-template-rows: auto 1fr;
   overflow: hidden;
+  box-shadow: var(--whisper-shadow);
 }
 
 .doc-preview-header {
@@ -759,24 +940,34 @@ button {
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 
 .doc-preview-header h3 {
   margin: 0;
-  font-size: 1rem;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 1.05rem;
+  font-weight: 500;
 }
 
 .close-preview-btn {
   border: 1px solid var(--line);
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   padding: 8px 16px;
   cursor: pointer;
+  color: var(--ink-secondary);
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.close-preview-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
 }
 
 .doc-preview-body {
-  padding: 14px;
+  padding: 20px;
   overflow: auto;
 }
 
@@ -784,17 +975,18 @@ button {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.55;
-  font-family: "Times New Roman", Times, serif;
+  line-height: 1.7;
+  font-family: Georgia, "Times New Roman", serif;
   font-size: 1rem;
+  color: var(--ink-secondary);
 }
 
 .md-preview {
   display: grid;
-  gap: 10px;
-  line-height: 1.55;
-  color: var(--ink);
-  font-family: Georgia, "Times New Roman", Times, serif;
+  gap: 12px;
+  line-height: 1.7;
+  color: var(--ink-secondary);
+  font-family: Georgia, "Times New Roman", serif;
   word-break: break-word;
 }
 
@@ -805,6 +997,9 @@ button {
 .md-preview h5,
 .md-preview h6 {
   margin: 0;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 500;
+  color: var(--ink);
 }
 
 .md-preview h1 { font-size: 1.5rem; }
@@ -818,49 +1013,54 @@ button {
 }
 
 .math-inline {
-  font-family: "IBM Plex Mono", "JetBrains Mono", monospace;
-  font-size: 0.95em;
-  background: var(--surface-2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.92em;
+  background: var(--surface-3);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
 }
 
 .preview-note {
   margin: 10px 0 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-family: "IBM Plex Mono", monospace;
 }
 
+/* ========================================
+   SEARCH
+   ======================================== */
+
 .search-modes {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   margin: 14px 0;
 }
 
 .search-modes button {
   border: 1px solid var(--line);
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--muted);
   padding: 8px 16px;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .search-modes button:hover {
   background: var(--surface-2);
   color: var(--ink);
+  border-color: var(--line-strong);
 }
 
 .search-modes button.active {
-  background: var(--surface-2);
-  color: var(--ink);
-  border-color: var(--line);
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-ring);
 }
 
 .search-container form {
@@ -870,16 +1070,22 @@ button {
 
 .suggestions {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-lg);
   margin-top: 10px;
   overflow: hidden;
   background: var(--surface);
 }
 
 .suggestion {
-  padding: 10px 12px;
+  padding: 10px 14px;
   cursor: pointer;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-subtle);
+  font-size: 0.92rem;
+  transition: background 0.15s ease;
+}
+
+.suggestion:first-child {
+  border-top: none;
 }
 
 .suggestion:hover {
@@ -891,52 +1097,57 @@ button {
 }
 
 .result {
-  border-top: 1px solid var(--line);
-  padding: 12px 0;
+  border-top: 1px solid var(--line-subtle);
+  padding: 14px 0;
 }
 
 .source,
 .score {
   display: inline-block;
   margin-right: 10px;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
 }
+
+/* ========================================
+   SETTINGS
+   ======================================== */
 
 .settings-layout {
   display: grid;
   grid-template-columns: 220px 1fr;
-  gap: 20px;
+  gap: 24px;
 }
 
 .settings-sidebar {
   padding-right: 14px;
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 4px;
 }
 
 .settings-sidebar button {
   border: none;
   background: transparent;
-  border-radius: 6px;
-  color: var(--muted);
+  border-radius: var(--radius-md);
+  color: var(--ink-secondary);
   text-align: left;
-  padding: 8px 12px;
+  padding: 10px 12px;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 }
 
 .settings-sidebar button:hover {
-  background: var(--accent-soft);
+  background: var(--surface-2);
   color: var(--ink);
 }
 
 .settings-sidebar button.active {
-  background: var(--surface-2);
-  color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
 }
 
 .sidebar-spacer {
@@ -944,7 +1155,12 @@ button {
 }
 
 .logout-btn {
-  color: var(--accent-deep);
+  color: var(--muted) !important;
+}
+
+.logout-btn:hover {
+  color: var(--error) !important;
+  background: rgba(181, 51, 51, 0.1) !important;
 }
 
 .setting-row {
@@ -953,37 +1169,50 @@ button {
   align-items: center;
   gap: 16px;
   padding: 16px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-subtle);
 }
 
 .account-info,
 .danger-zone,
 .admin-card {
   border: 1px solid var(--line);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  padding: 16px;
-  margin-top: 12px;
-  box-shadow: var(--card-shadow);
+  padding: 20px;
+  margin-top: 14px;
+  box-shadow: 0 0 0 1px var(--line);
 }
 
 .danger-zone h3,
 .danger-zone h4 {
-  color: var(--accent-deep);
+  color: var(--error);
   margin-top: 0;
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 500;
 }
 
+/* ========================================
+   SCROLLBAR (refined)
+   ======================================== */
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c0baa8;
-  border-radius: 999px;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
 }
 
-/* Desktop definitions for mobile elements */
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-soft);
+}
+
+/* ========================================
+   MOBILE — Desktop defaults for mobile elements
+   ======================================== */
+
 .mobile-header {
   display: none;
 }
@@ -1017,7 +1246,7 @@ button {
     align-items: center;
     gap: 16px;
     padding: 12px 20px;
-    background: var(--surface);
+    background: var(--bg-deep);
     border-bottom: 1px solid var(--line);
     z-index: 50;
   }
@@ -1033,19 +1262,21 @@ button {
   }
 
   .mobile-brand {
-    font-size: 1.35rem;
-    font-weight: 700;
-    letter-spacing: -0.04em;
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 1.4rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
 
   .sidebar-overlay {
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(14, 14, 13, 0.7);
     z-index: 60;
     opacity: 0;
     pointer-events: none;
+    transition: opacity 0.25s ease;
   }
 
   .sidebar-overlay.open {
@@ -1063,9 +1294,10 @@ button {
     height: 100dvh;
     z-index: 70;
     transform: translateX(-100%);
-    background: var(--surface);
+    background: var(--bg-deep);
     border-right: 1px solid var(--line);
     border-top: none;
+    transition: transform 0.25s ease;
   }
 
   .app-sidebar.mobile-open {
@@ -1101,7 +1333,7 @@ button {
   .sidebar-nav button {
     padding: 12px 14px;
     font-size: 1.05rem;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
   }
 
   .sidebar-footer {
@@ -1111,7 +1343,6 @@ button {
 
   .app-main {
     min-height: 0;
-    /* Prevent grid auto size expansion */
     height: 100%;
     overflow: hidden;
     padding: 12px;
@@ -1119,18 +1350,6 @@ button {
     flex-direction: column;
   }
 
-  .chat-sidebar {
-    position: fixed;
-    left: 12px;
-    right: 12px;
-    top: 70px;
-    /* Below mobile header roughly */
-    bottom: 12px;
-    width: auto;
-    min-width: 0;
-    transform: translateX(-120%);
-    z-index: 40;
-  }
 
   .chat-page {
     min-height: 0;
@@ -1140,17 +1359,8 @@ button {
     flex: 1;
   }
 
-  .chat-page.history-open {
-    grid-template-columns: 1fr;
-  }
-
-  .chat-sidebar.open {
-    width: auto;
-    min-width: 0;
-  }
-
   .chat-container {
-    border-radius: 16px;
+    border-radius: var(--radius-xl);
     height: 100%;
     min-height: 0;
   }
@@ -1171,7 +1381,7 @@ button {
 
   .message {
     padding: 12px;
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
   }
 
   .chat-container form {
@@ -1211,7 +1421,7 @@ button {
     width: 38px;
     height: 38px;
     font-size: 1rem;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
   }
 
   .documents-container,
@@ -1220,14 +1430,12 @@ button {
   .account-container,
   .admin-container {
     min-height: 0;
-    /* Prevent flex children from expanding container */
     max-height: 100%;
     overflow: auto;
-    border-radius: 16px;
+    border-radius: var(--radius-xl);
     padding: 16px;
   }
 
-  /* Fix horizontal overflow caused by flex items */
   .upload-section form {
     flex-direction: column;
     align-items: stretch;
@@ -1241,11 +1449,9 @@ button {
 
   .doc-item>span:first-child {
     word-break: break-word;
-    /* allow long filenames to wrap */
     width: 100%;
   }
 
-  /* Fix search results overlowing */
   .result {
     word-break: break-word;
   }

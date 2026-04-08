@@ -91,14 +91,11 @@ function renderAnswerMarkdown(answer) {
     return blocks;
 }
 
-function Chat() {
+function Chat({ conversations, conversationId, onLoadConversation, onNewConversation, onRefreshConversations }) {
     const [question, setQuestion] = useState('');
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(false);
     const [feedbackState, setFeedbackState] = useState({});
-    const [conversationId, setConversationId] = useState(null);
-    const [conversations, setConversations] = useState([]);
-    const [showHistory, setShowHistory] = useState(false);
     const fileInputRef = useRef(null);
 
     const authHeaders = useCallback(() => {
@@ -125,35 +122,29 @@ function Chat() {
         }
     }, [authHeaders]);
 
-    const loadConversations = useCallback(async () => {
-        try {
-            const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/history/`, { headers }));
-            setConversations(res.data.conversations || []);
-        } catch (err) {
-            console.error(err);
-        }
-    }, [requestWithRefresh]);
-
+    // Load conversation messages when conversationId changes from parent
     useEffect(() => {
-        loadConversations();
-    }, [loadConversations]);
-
-    const loadConversation = async (convId) => {
-        try {
-            const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/conversations/${convId}/`, { headers }));
-            setConversationId(convId);
-            setMessages(
-                res.data.messages.map((m) => ({
-                    question: m.question,
-                    answer: m.answer,
-                    sources: m.sources,
-                }))
-            );
-            setShowHistory(false);
-        } catch (err) {
-            console.error(err);
+        if (!conversationId) {
+            setMessages([]);
+            setFeedbackState({});
+            return;
         }
-    };
+        const loadMessages = async () => {
+            try {
+                const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/conversations/${conversationId}/`, { headers }));
+                setMessages(
+                    res.data.messages.map((m) => ({
+                        question: m.question,
+                        answer: m.answer,
+                        sources: m.sources,
+                    }))
+                );
+            } catch (err) {
+                console.error(err);
+            }
+        };
+        loadMessages();
+    }, [conversationId, requestWithRefresh]);
 
     const askQuestion = async (e) => {
         e.preventDefault();
@@ -168,7 +159,7 @@ function Chat() {
             const res = await requestWithRefresh((headers) => axios.post(`${API}/chat/`, body, { headers }));
 
             if (res.data.conversation_id) {
-                setConversationId(res.data.conversation_id);
+                onLoadConversation(res.data.conversation_id, false); // update parent's conversationId without reloading messages
             }
 
             setMessages((prev) => [
@@ -181,7 +172,7 @@ function Chat() {
                 },
             ]);
             setQuestion('');
-            loadConversations();
+            onRefreshConversations();
         } catch (err) {
             alert(`Error: ${err.response?.data?.error || 'Something went wrong'}`);
         }
@@ -212,12 +203,6 @@ function Chat() {
         }
     };
 
-    const newConversation = () => {
-        setConversationId(null);
-        setMessages([]);
-        setFeedbackState({});
-    };
-
     const submitFeedback = async (chatId, rating) => {
         try {
             await requestWithRefresh((headers) => axios.post(`${API}/chat/${chatId}/feedback/`, { rating }, { headers }));
@@ -228,46 +213,15 @@ function Chat() {
     };
 
     return (
-        <div className={`chat-page ${showHistory ? 'history-open' : ''}`}>
-            <div className={`chat-sidebar ${showHistory ? 'open' : ''}`}>
-                <div className="sidebar-header">
-                    <h3>History</h3>
-                    <button onClick={() => setShowHistory(false)} className="close-sidebar">X</button>
-                </div>
-                <button className="new-chat-sidebar" onClick={() => { newConversation(); setShowHistory(false); }}>
-                    + New Chat
-                </button>
-                <div className="conversation-list">
-                    {conversations.map((conv) => (
-                        <div
-                            key={conv.id}
-                            className={`conversation-item ${conv.id === conversationId ? 'active' : ''}`}
-                            onClick={() => loadConversation(conv.id)}
-                        >
-                            <span className="conv-title">{conv.title}</span>
-                            <span className="conv-meta">{conv.message_count} msgs</span>
-                        </div>
-                    ))}
-                    {conversations.length === 0 && (
-                        <p style={{ fontSize: '0.75rem', color: '#6A6B75', padding: '16px' }}>No conversations yet</p>
-                    )}
-                </div>
-            </div>
-
+        <div className="chat-page">
             <div className="chat-container">
                 <div className="chat-header">
                     <div className="chat-header-left">
-                        <button
-                            className="history-toggle"
-                            onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadConversations(); }}
-                        >
-                            MENU
-                        </button>
                         <h2>Chat with your documents</h2>
                     </div>
                     {messages.length > 0 && (
-                        <button className="new-chat-btn" onClick={newConversation}>
-                            + New Chat
+                        <button className="new-chat-btn" onClick={onNewConversation}>
+                            + New
                         </button>
                     )}
                 </div>

@@ -194,7 +194,7 @@ function Settings({ onLogout }) {
                             </div>
                             <button className="save-btn" onClick={savePreferences}>Save Preferences</button>
 
-                            <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #2f3036' }}>
+                            <div style={{ marginTop: '32px', paddingTop: '24px', borderTop: '1px solid var(--line)' }}>
                                 <h4 style={{ marginBottom: '14px' }}>LLM Provider & API Key</h4>
                                 <p style={{ marginBottom: '12px', fontSize: '0.8rem' }}>
                                     Current Key: {apiKeyDisplay || 'Not set'}
@@ -237,10 +237,10 @@ function Settings({ onLogout }) {
                                         style={{
                                             flex: 1,
                                             padding: '10px 14px',
-                                            borderRadius: '12px',
-                                            border: '1px solid #2f3036',
-                                            backgroundColor: '#11141f',
-                                            color: '#f1efe8',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--line)',
+                                            backgroundColor: 'var(--surface-2)',
+                                            color: 'var(--ink)',
                                             outline: 'none',
                                         }}
                                     />

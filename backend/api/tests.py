@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import default_token_generator
@@ -12,11 +12,23 @@ from types import SimpleNamespace
 import os
 import shutil
 import numpy as np
+import logging
 
 from api import views as api_views
 from api.models import APIUsageLog, Conversation, ChatMessage, Task, Collection, Document
 
 
+_NO_THROTTLE = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_THROTTLE_CLASSES': [],
+    'DEFAULT_THROTTLE_RATES': {},
+    'EXCEPTION_HANDLER': 'api.exception_handler.custom_exception_handler',
+}
+
+
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
 class HealthEndpointTests(TestCase):
     def test_health_endpoint_returns_ok(self):
         response = self.client.get("/api/health/", follow=True)
@@ -25,6 +37,7 @@ class HealthEndpointTests(TestCase):
         self.assertEqual(response.json().get("status"), "ok")
 
 
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
 class DocumentIsolationTests(TestCase):
     def setUp(self):
         self.api_client = APIClient()
@@ -76,6 +89,7 @@ class DocumentIsolationTests(TestCase):
         self.assertNotIn("topic.txt", names)
 
 
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
 class EndpointSmokeTests(TestCase):
     def setUp(self):
         self.api_client = APIClient()
@@ -195,8 +209,11 @@ class EndpointSmokeTests(TestCase):
         self.assertEqual(body.get("total_documents"), 2)
 
 
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
 class AuthAndTaskEndpointSmokeTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
         self.api_client = APIClient()
         self.user = User.objects.create_user(
             username="auth_user",
@@ -474,6 +491,7 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
         self.assertEqual(cancel_response.status_code, 404)
 
 
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
 class IngestAndCollectionEndpointSmokeTests(TestCase):
     def setUp(self):
         self.api_client = APIClient()
@@ -680,6 +698,7 @@ class URLParsingHelperTests(TestCase):
         self.assertIn("$f_{c}(z)=z^{2}+c$", md)
 
 
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
 class YouTubeIngestionTests(TestCase):
     def test_is_youtube_url_detects_standard_url(self):
         result = api_views._is_youtube_url("https://www.youtube.com/watch?v=aircAruvnKk")
@@ -793,3 +812,62 @@ class ContextCompressionTests(TestCase):
         self.assertGreaterEqual(len(result), 1)
 
 
+class JSONLogFormatterTests(TestCase):
+    """Tests for the JSON log formatter."""
+
+    def test_formats_log_record_as_json(self):
+        import json as json_module
+        from api.log_formatter import JSONFormatter
+        formatter = JSONFormatter()
+        record = logging.LogRecord(
+            name="api", level=logging.INFO, pathname="", lineno=0,
+            msg="Test message", args=(), exc_info=None,
+        )
+        output = formatter.format(record)
+        parsed = json_module.loads(output)
+        self.assertEqual(parsed["level"], "INFO")
+        self.assertEqual(parsed["message"], "Test message")
+        self.assertIn("timestamp", parsed)
+
+
+class CustomExceptionHandlerTests(TestCase):
+    """Tests for the custom exception handler."""
+
+    def test_handler_returns_response_for_drf_exceptions(self):
+        from api.exception_handler import custom_exception_handler
+        from rest_framework.exceptions import NotFound
+        from rest_framework.test import APIRequestFactory
+
+        factory = APIRequestFactory()
+        request = factory.get("/api/test/")
+        exc = NotFound("Not found")
+        context = {"request": request, "view": None}
+        response = custom_exception_handler(exc, context)
+        self.assertEqual(response.status_code, 404)
+
+    def test_handler_catches_unhandled_exceptions(self):
+        from api.exception_handler import custom_exception_handler
+        from rest_framework.test import APIRequestFactory
+
+        factory = APIRequestFactory()
+        request = factory.get("/api/test/")
+        exc = RuntimeError("Something broke")
+        context = {"request": request, "view": None}
+        response = custom_exception_handler(exc, context)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("error", response.data)
+
+
+@override_settings(REST_FRAMEWORK=_NO_THROTTLE)
+class MiddlewareTests(TestCase):
+    """Tests for the usage tracking middleware."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="mw_user", password="pass12345")
+        self.api_client = APIClient()
+
+    def test_response_contains_request_id_header(self):
+        self.api_client.force_authenticate(user=self.user)
+        response = self.api_client.get("/api/health/")
+        self.assertIn("X-Request-ID", response)
+        self.assertEqual(len(response["X-Request-ID"]), 8)

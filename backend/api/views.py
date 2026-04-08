@@ -14,6 +14,7 @@ from api.retriever import build_index, search, rerank, get_embedding_model
 from api.generator import generate_answer, test_provider_connection, ProviderAPIError
 from api.chunker import semantic_chunk
 from api.compressor import compress_chunks
+from api.throttles import ChatRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
@@ -700,11 +701,13 @@ def _run_url_ingest_task(user_id, url, update=None, is_cancelled=None):
     return result
 
 class HealthView(APIView):
+    throttle_classes = []
     def get(self, request):
         return Response({"status":"ok", "message":"RAG API is running"}, status=status.HTTP_200_OK)
 
 class AskView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ChatRateThrottle]
     def post(self, request):
         ensure_documents_loaded(request.user)
         question = request.data.get("question")

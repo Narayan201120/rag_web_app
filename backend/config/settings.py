@@ -90,6 +90,7 @@ CORS_ALLOWED_ORIGINS = [
     for origin in os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
     if origin.strip()
 ]
+CORS_ALLOW_CREDENTIALS = True
 
 
 # Database
@@ -127,6 +128,10 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = "DENY"
+    # HSTS — tell browsers to always use HTTPS for this domain.
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
 
 # Password validation

@@ -108,15 +108,12 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
             return await requestFn(authHeaders());
         } catch (err) {
             if (err.response?.status !== 401) throw err;
-            const refresh = localStorage.getItem('refresh');
-            if (!refresh) throw err;
             try {
-                const refreshRes = await axios.post(`${API}/token/refresh/`, { refresh });
+                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
                 localStorage.setItem('access', refreshRes.data.access);
                 return await requestFn(authHeaders());
             } catch (refreshErr) {
                 localStorage.removeItem('access');
-                localStorage.removeItem('refresh');
                 throw refreshErr;
             }
         }
@@ -213,72 +210,122 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
     };
 
     return (
-        <div className="chat-page">
-            <div className="chat-container">
-                <div className="chat-header">
-                    <div className="chat-header-left">
-                        <h2>Chat with your documents</h2>
-                    </div>
-                    {messages.length > 0 && (
-                        <button className="new-chat-btn" onClick={onNewConversation}>
-                            + New
-                        </button>
-                    )}
+        <>
+            <header className="top-nav">
+                <div className="top-nav-title-container">
+                    <h2 className="top-nav-title">Synthesize Your Knowledge</h2>
                 </div>
+                {messages.length > 0 && (
+                    <button className="new-chat-btn" onClick={onNewConversation}>
+                        <span className="material-symbols-outlined" style={{ fontSize: '0.875rem' }}>add</span>
+                        + New Chat
+                    </button>
+                )}
+            </header>
 
-                <div className="messages">
-                    {messages.map((msg, i) => (
-                        <div key={i} className="message">
-                            <p className="question">{msg.question}</p>
-                            <div className="answer markdown-content">{renderAnswerMarkdown(msg.answer)}</div>
-                            <p className="sources">Sources: {msg.sources?.join(', ')}</p>
-                            {msg.id && (
-                                <div className="feedback-buttons">
-                                    <button
-                                        className={`fb-btn${feedbackState[msg.id] === 'up' ? ' active' : ''}`}
-                                        onClick={() => submitFeedback(msg.id, 'up')}
-                                        title="Helpful"
-                                    >👍</button>
-                                    <button
-                                        className={`fb-btn${feedbackState[msg.id] === 'down' ? ' active' : ''}`}
-                                        onClick={() => submitFeedback(msg.id, 'down')}
-                                        title="Not helpful"
-                                    >👎</button>
-                                </div>
-                            )}
+            <div className="chat-area">
+                {messages.map((msg, i) => (
+                    <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                        <div className="message-container user-message-wrapper">
+                            <div className="user-message">
+                                <p>{msg.question}</p>
+                            </div>
                         </div>
-                    ))}
-                    {loading && <p className="loading">Thinking...</p>}
-                </div>
 
-                <form onSubmit={askQuestion} className="chat-compose">
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        onChange={handleChatFileUpload}
-                        style={{ display: 'none' }}
-                    />
-                    <button
-                        type="button"
-                        className="compose-icon-btn"
-                        onClick={handleComposePlus}
-                        aria-label="Add attachment"
-                        title="Add attachment"
-                    >
-                        +
-                    </button>
-                    <input
-                        type="text"
-                        placeholder="Ask a question..."
-                        value={question}
-                        onChange={(e) => setQuestion(e.target.value)}
-                    />
-                    <button type="submit" className="compose-send-btn" disabled={loading} aria-label="Send message">
-                        {loading ? '...' : '>'}
-                    </button>
+                        <div className="message-container ai-message-wrapper">
+                            <div className="ai-avatar">
+                                <span className="material-symbols-outlined ai-avatar-icon">smart_toy</span>
+                            </div>
+                            <div className="ai-message">
+                                {renderAnswerMarkdown(msg.answer)}
+                                
+                                {msg.sources && msg.sources.length > 0 && (
+                                    <div className="citations">
+                                        {msg.sources.map((s, sidx) => (
+                                            <span key={sidx} className="citation-chip">
+                                                <span className="material-symbols-outlined citation-icon">description</span>
+                                                [{sidx + 1}] {s}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {msg.id && (
+                                    <div className="ai-actions always-visible">
+                                        <button 
+                                            className={`ai-action-btn ${feedbackState[msg.id] === 'up' ? 'active-primary' : 'hover-primary'}`} 
+                                            onClick={() => submitFeedback(msg.id, 'up')}
+                                        >
+                                            <span className="material-symbols-outlined" style={{ fontSize: '0.875rem' }}>thumb_up</span>
+                                        </button>
+                                        <button 
+                                            className={`ai-action-btn ${feedbackState[msg.id] === 'down' ? 'active-error' : 'hover-error'}`} 
+                                            onClick={() => submitFeedback(msg.id, 'down')}
+                                        >
+                                            <span className="material-symbols-outlined" style={{ fontSize: '0.875rem' }}>thumb_down</span>
+                                        </button>
+                                        <button 
+                                            className="ai-action-btn hover-on-surface ai-action-copy"
+                                            onClick={() => navigator.clipboard.writeText(msg.answer)}
+                                        >
+                                            <span className="material-symbols-outlined" style={{ fontSize: '0.875rem' }}>content_copy</span> Copy
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                
+                {loading && (
+                    <div className="message-container ai-message-wrapper" style={{ marginTop: '2rem' }}>
+                        <div className="ai-avatar">
+                            <span className="material-symbols-outlined ai-avatar-icon animate-pulse">smart_toy</span>
+                        </div>
+                        <div className="ai-message">
+                            <p className="animate-pulse">Analyzing context...</p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="compose-area">
+                <form className="compose-container" onSubmit={askQuestion}>
+                    <div className="compose-box">
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            onChange={handleChatFileUpload}
+                            style={{ display: 'none' }}
+                        />
+                        <button type="button" className="attach-btn" onClick={handleComposePlus} title="Upload Document">
+                            <span className="material-symbols-outlined">add_circle</span>
+                        </button>
+                        <div className="input-wrapper">
+                            <textarea
+                                className="compose-input"
+                                placeholder="Ask about your documents..."
+                                rows="1"
+                                value={question}
+                                onChange={(e) => setQuestion(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if(e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        askQuestion(e);
+                                    }
+                                }}
+                            ></textarea>
+                        </div>
+                        <button type="submit" className="send-btn" disabled={loading} title="Send Message">
+                            <span className="material-symbols-outlined" style={{ fontSize: '1.125rem', fontVariationSettings: "'FILL' 1" }}>arrow_upward</span>
+                        </button>
+                    </div>
+                    <div className="footer-text">
+                        <span>AI responses can be inaccurate. Please verify critical information.</span>
+                    </div>
                 </form>
             </div>
-        </div>
+        </>
     );
 }
 

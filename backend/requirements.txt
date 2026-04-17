@@ -21,3 +21,5 @@ deepeval
 celery[redis]
 redis
 youtube-transcript-api
+google-auth
+cryptography

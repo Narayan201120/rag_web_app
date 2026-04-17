@@ -28,6 +28,8 @@ from bs4 import BeautifulSoup
 from api.models import ChatMessage, ChatFeedback, Collection, Document, APIUsageLog, UserProfile, Conversation, Task
 from api.tasks import submit_task, TaskCancelled
 from api.llm_catalog import PROVIDER_MODELS
+from api.encryption import encrypt_value, decrypt_value
+import shutil
 
 DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
@@ -700,6 +702,68 @@ def _run_url_ingest_task(user_id, url, update=None, is_cancelled=None):
     result["source_url"] = clean_url
     return result
 
+
+# ---------------------------------------------------------------------------
+# Refresh-token cookie helpers
+# ---------------------------------------------------------------------------
+_REFRESH_COOKIE_NAME = "refresh_token"
+_REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24  # 1 day, matches SIMPLE_JWT REFRESH_TOKEN_LIFETIME
+
+
+def _set_refresh_cookie(response, refresh_token_str):
+    """Set the refresh token as an HttpOnly Secure cookie on the response."""
+    is_prod = not settings.DEBUG
+    response.set_cookie(
+        key=_REFRESH_COOKIE_NAME,
+        value=refresh_token_str,
+        max_age=_REFRESH_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=is_prod,
+        samesite="None" if is_prod else "Lax",
+        path="/",
+    )
+
+
+def _clear_refresh_cookie(response):
+    """Delete the refresh token cookie."""
+    is_prod = not settings.DEBUG
+    response.delete_cookie(
+        key=_REFRESH_COOKIE_NAME,
+        path="/",
+        samesite="None" if is_prod else "Lax",
+    )
+
+
+class CookieTokenRefreshView(APIView):
+    """Custom token refresh that reads the refresh token from the HttpOnly cookie
+    instead of requiring it in the request body.
+    Falls back to the body 'refresh' field for backwards compatibility.
+    """
+    throttle_classes = []
+
+    def post(self, request):
+        refresh_token = request.COOKIES.get(_REFRESH_COOKIE_NAME) or request.data.get('refresh')
+        if not refresh_token:
+            return Response(
+                {'error': 'No refresh token provided.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            token = RefreshToken(refresh_token)
+            new_access = str(token.access_token)
+            return Response(
+                {'access': new_access},
+                status=status.HTTP_200_OK
+            )
+        except Exception:
+            response = Response(
+                {'error': 'Invalid or expired refresh token.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+            _clear_refresh_cookie(response)
+            return response
+
+
 class HealthView(APIView):
     throttle_classes = []
     def get(self, request):
@@ -750,7 +814,7 @@ class AskView(APIView):
                 final_chunks,
                 provider=profile.llm_provider,
                 model=profile.llm_model,
-                api_key=profile.llm_api_key,
+                api_key=decrypt_value(profile.llm_api_key),
             )
         except ValueError as e:
             return Response(
@@ -776,13 +840,14 @@ class SignUpView(APIView):
         if serializer.is_valid():
             user = serializer.save()
             refresh = RefreshToken.for_user(user)
-            return Response({
+            response = Response({
                 'message': 'Signed Up Successfully.',
                 'tokens': {
-                    'refresh': str(refresh),
                     'access': str(refresh.access_token)
                 }
             }, status=status.HTTP_201_CREATED)
+            _set_refresh_cookie(response, str(refresh))
+            return response
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 """ SIGN-IN VIEW """
@@ -802,22 +867,24 @@ class SignInView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED
             )
         refresh = RefreshToken.for_user(user)
-        return Response(
+        response = Response(
             {'message':'Signed In Successfully.',
                 'tokens': {
-                    'refresh':str(refresh),
                     'access': str(refresh.access_token)
                 }
             },
             status=status.HTTP_200_OK
         )
+        _set_refresh_cookie(response, str(refresh))
+        return response
 
 """ LOG-OUT VIEW """
 class LogOutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        refresh_token = request.data.get('refresh')
+        # Read refresh token from HttpOnly cookie first, fall back to body.
+        refresh_token = request.COOKIES.get('refresh_token') or request.data.get('refresh')
         if not refresh_token:
             return Response(
                 {'error':'Please provide the refresh token'},
@@ -826,15 +893,19 @@ class LogOutView(APIView):
         try:
             token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response(
+            response = Response(
                 {'message': 'Logged out successfully.'},
                 status=status.HTTP_200_OK
             )
+            _clear_refresh_cookie(response)
+            return response
         except Exception:
-            return Response(
+            response = Response(
                 {'error': 'Invalid or expired token.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+            _clear_refresh_cookie(response)
+            return response
 
 """ DOCUMENT UPLOAD VIEW """
 class DocumentUploadView(APIView):
@@ -976,11 +1047,24 @@ class DeleteAccountView(APIView):
                 {'error': 'Incorrect Password!'},
                 status=status.HTTP_403_FORBIDDEN
             )
+        # RTBF: Delete user's document directory and all files.
+        user_dir = _user_doc_dir(user)
+        if os.path.isdir(user_dir):
+            shutil.rmtree(user_dir, ignore_errors=True)
+        # Reset in-memory index if currently loaded for this user.
+        global _current_user_id, _documents_loaded
+        if _current_user_id == user.id:
+            docs.clear()
+            chunk_sources.clear()
+            _current_user_id = None
+            _documents_loaded = False
         user.delete()
-        return Response(
+        response = Response(
             {'message': 'Account deleted successfully.'},
             status=status.HTTP_200_OK
         )
+        _clear_refresh_cookie(response)
+        return response
 
 """ ACCOUNT VIEW """
 class AccountView(APIView):
@@ -1176,7 +1260,7 @@ class ChatView(APIView):
                 top_chunks,
                 provider=profile.llm_provider,
                 model=profile.llm_model,
-                api_key=profile.llm_api_key,
+                api_key=decrypt_value(profile.llm_api_key),
                 chat_history=chat_history,
             )
         except ValueError as e:
@@ -1616,7 +1700,7 @@ class APIKeyView(APIView):
 
     def get(self, request):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
-        key = profile.llm_api_key
+        key = decrypt_value(profile.llm_api_key)
         if key:
             if len(key) <= 8:
                 masked = "*" * len(key)
@@ -1658,7 +1742,7 @@ class APIKeyView(APIView):
         profile, _ = UserProfile.objects.get_or_create(user=request.user)
         profile.llm_provider = provider
         profile.llm_model = model
-        profile.llm_api_key = api_key
+        profile.llm_api_key = encrypt_value(api_key)
         profile.save()
         return Response(
             {'message': 'Provider, model, and API key saved successfully.'},
@@ -1674,7 +1758,7 @@ class APIKeyConnectionTestView(APIView):
 
         provider = (request.data.get("provider") or profile.llm_provider or "").strip()
         model = (request.data.get("model") or profile.llm_model or "").strip()
-        api_key = (request.data.get("api_key") or profile.llm_api_key or "").strip()
+        api_key = (request.data.get("api_key") or decrypt_value(profile.llm_api_key) or "").strip()
 
         if provider not in SUPPORTED_LLM_PROVIDERS:
             return Response(

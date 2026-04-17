@@ -30,15 +30,13 @@ function App() {
             return await requestFn(authHeaders());
         } catch (err) {
             if (err.response?.status !== 401) throw err;
-            const refresh = localStorage.getItem('refresh');
-            if (!refresh) throw err;
             try {
-                const refreshRes = await axios.post(`${API}/token/refresh/`, { refresh });
+                // Refresh token is in an HttpOnly cookie — sent automatically.
+                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
                 localStorage.setItem('access', refreshRes.data.access);
                 return await requestFn(authHeaders());
             } catch (refreshErr) {
                 localStorage.removeItem('access');
-                localStorage.removeItem('refresh');
                 throw refreshErr;
             }
         }
@@ -64,9 +62,17 @@ function App() {
         setMobileMenuOpen(false);
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        try {
+            const token = localStorage.getItem('access');
+            await axios.post(`${API}/logout/`, {}, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+                withCredentials: true
+            });
+        } catch (e) {
+            // Best-effort — clear local state regardless.
+        }
         localStorage.removeItem('access');
-        localStorage.removeItem('refresh');
         setLoggedIn(false);
         setConversations([]);
         setConversationId(null);
@@ -92,95 +98,78 @@ function App() {
     }
 
     return (
-        <div className="App dark-theme">
-            {/* Mobile Header */}
-            <div className="mobile-header">
-                <button
-                    className="hamburger-btn"
-                    onClick={() => setMobileMenuOpen(true)}
-                    aria-label="Open Menu"
-                >
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="3" y1="12" x2="21" y2="12"></line>
-                        <line x1="3" y1="6" x2="21" y2="6"></line>
-                        <line x1="3" y1="18" x2="21" y2="18"></line>
-                    </svg>
-                </button>
-                <div className="mobile-brand">RAG</div>
-            </div>
-
-            {/* Sidebar */}
+        <div style={{ display: 'flex', width: '100%', height: '100%' }}>
+            {/* Mobile overlay (optional for later) */}
             <div className={`sidebar-overlay ${mobileMenuOpen ? 'open' : ''}`} onClick={() => setMobileMenuOpen(false)}></div>
-            <nav className={`app-sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-brand">
-                    <span className="brand-name">RAG</span>
-                    <span className="brand-tag">Document Intelligence</span>
-                    <button className="mobile-close-btn" onClick={() => setMobileMenuOpen(false)}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
+            
+            {/* SideNavBar */}
+            <nav className={`sidebar font-headline ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+                <div className="sidebar-header">
+                    <h1 className="sidebar-title">DocuMind</h1>
+                    <div className="status-indicator-container">
+                        <span aria-label="System Status Indicator" className="status-dot online"></span>
+                        <span className="status-text">SYSTEM ONLINE</span>
+                    </div>
                 </div>
 
-                <div className="sidebar-nav">
-                    <button className={page === 'chat' ? 'active' : ''} onClick={() => handleNavClick('chat')}>
-                        <span className="nav-icon">CH</span>
-                        <span>Chat</span>
+                <div className="nav-tabs">
+                    <button className={`nav-tab ${page === 'chat' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('chat')}>
+                        <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1", fontSize: "1.25rem" }}>chat</span>
+                        <span className="font-label nav-tab-label">Chat</span>
                     </button>
-                    <button className={page === 'documents' ? 'active' : ''} onClick={() => handleNavClick('documents')}>
-                        <span className="nav-icon">DOC</span>
-                        <span>Documents</span>
+                    <button className={`nav-tab ${page === 'documents' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('documents')}>
+                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>description</span>
+                        <span className="font-label nav-tab-label">Documents</span>
                     </button>
-                    <button className={page === 'search' ? 'active' : ''} onClick={() => handleNavClick('search')}>
-                        <span className="nav-icon">SRC</span>
-                        <span>Search</span>
+                    <button className={`nav-tab ${page === 'search' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('search')}>
+                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>search</span>
+                        <span className="font-label nav-tab-label">Search</span>
                     </button>
-                    <button className={page === 'settings' ? 'active' : ''} onClick={() => handleNavClick('settings')}>
-                        <span className="nav-icon">CFG</span>
-                        <span>Settings</span>
+                    <button className={`nav-tab ${page === 'settings' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('settings')}>
+                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>settings</span>
+                        <span className="font-label nav-tab-label">Settings</span>
                     </button>
-                </div>
 
-                {/* Chat History — visible when on chat page */}
-                {page === 'chat' && (
-                    <div className="sidebar-history">
-                        <div className="sidebar-history-header">
-                            <span className="sidebar-history-label">History</span>
-                            <button className="new-chat-sidebar-btn" onClick={handleNewConversation}>
-                                + New
-                            </button>
-                        </div>
-                        <div className="sidebar-conversation-list">
-                            {conversations.map((conv) => (
-                                <div
-                                    key={conv.id}
-                                    className={`sidebar-conv-item ${conv.id === conversationId ? 'active' : ''}`}
-                                    onClick={() => handleLoadConversation(conv.id)}
-                                >
-                                    <span className="sidebar-conv-title">{conv.title}</span>
-                                    <span className="sidebar-conv-meta">{conv.message_count} msgs</span>
+                    <div className="conversations-section">
+                        <h3 className="sidebar-section-title">Recent Chats</h3>
+                        <div className="conversations-list">
+                            {conversations && conversations.length > 0 ? (
+                                conversations.map(conv => (
+                                    <button 
+                                        key={conv.id} 
+                                        className={`conv-item ${conversationId === conv.id ? 'active' : ''}`}
+                                        onClick={() => handleLoadConversation(conv.id)}
+                                    >
+                                        <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>chat_bubble</span>
+                                        <span className="conv-title">{conv.title || `Chat ${String(conv.id).substring(0, 8)}`}</span>
+                                    </button>
+                                ))
+                            ) : (
+                                <div style={{ paddingLeft: '1rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--outline)', fontFamily: "'Manrope', sans-serif" }}>
+                                    No recent chats
                                 </div>
-                            ))}
-                            {conversations.length === 0 && (
-                                <p className="sidebar-conv-empty">No conversations yet</p>
                             )}
                         </div>
                     </div>
-                )}
+                </div>
 
                 <div className="sidebar-footer">
-                    <div className="sidebar-status">
-                        <span className="status-dot online"></span>
-                        <span>SYSTEM ONLINE</span>
-                    </div>
-                    <button className="sidebar-logout" onClick={handleLogout}>
-                        Sign Out
+                    <button className="nav-tab nav-tab-inactive" onClick={handleLogout}>
+                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>logout</span>
+                        <span className="font-label nav-tab-label">Sign Out</span>
                     </button>
                 </div>
             </nav>
 
-            <main className="app-main">
+            {/* Main Content Canvas */}
+            <main className="main-content">
+                <button 
+                    className="mobile-menu-toggle" 
+                    onClick={() => setMobileMenuOpen(true)}
+                    aria-label="Open Menu"
+                >
+                    <span className="material-symbols-outlined">menu_open</span>
+                </button>
                 {page === 'chat' && (
                     <Chat
                         conversations={conversations}

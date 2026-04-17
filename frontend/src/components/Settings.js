@@ -34,18 +34,12 @@ function Settings({ onLogout }) {
             return await requestFn(authHeaders());
         } catch (err) {
             if (err.response?.status !== 401) throw err;
-            const refresh = localStorage.getItem('refresh');
-            if (!refresh) {
-                onLogout();
-                throw err;
-            }
             try {
-                const refreshRes = await axios.post(`${API}/token/refresh/`, { refresh });
+                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
                 localStorage.setItem('access', refreshRes.data.access);
                 return await requestFn(authHeaders());
             } catch (refreshErr) {
                 localStorage.removeItem('access');
-                localStorage.removeItem('refresh');
                 onLogout();
                 throw refreshErr;
             }

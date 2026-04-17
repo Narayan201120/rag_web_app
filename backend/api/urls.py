@@ -1,15 +1,16 @@
 from django.urls import path
 from . import views
-from rest_framework_simplejwt.views import TokenRefreshView
+from .social_auth import SocialAuthView
 
 app_name = "api"
 
 urlpatterns = [
     path("health/", views.HealthView.as_view(), name="health"),
+    path("auth/social/", SocialAuthView.as_view(), name="social-auth"),
     path("ask/", views.AskView.as_view(), name="ask"),
     path('sign-up/', views.SignUpView.as_view(), name='sign-up'),
     path('sign-in/', views.SignInView.as_view(), name='sign-in'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('token/refresh/', views.CookieTokenRefreshView.as_view(), name='token-refresh'),
     path('logout/', views.LogOutView.as_view(), name='logout'),
     path('upload/', views.DocumentUploadView.as_view(), name='upload'),
     path('documents/', views.ListDocumentsView.as_view(), name='documents'),

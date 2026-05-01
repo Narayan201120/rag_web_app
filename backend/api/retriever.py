@@ -71,3 +71,46 @@ def rerank(query, chunks, top_k=3):
         }
         for i in ranked_indices
     ]
+
+
+def remove_overlapping_chunks(chunks, sources, overlap_threshold=0.6):
+    """Remove chunks with high text overlap, keeping higher-ranked ones.
+
+    After reranking, adjacent semantic chunks may share significant content
+    (sentences at chunk boundaries). This wastes context window tokens and
+    can lead to repetitive or lower-quality LLM answers.
+
+    Uses Jaccard similarity on word sets — fast, no model calls needed.
+
+    Args:
+        chunks: List of chunk strings, ordered by relevance (best first).
+        sources: Parallel list of source filenames.
+        overlap_threshold: Jaccard similarity above which a chunk is dropped.
+
+    Returns:
+        Tuple of (deduplicated_chunks, deduplicated_sources).
+    """
+    if len(chunks) <= 1:
+        return chunks, sources
+
+    kept_chunks = [chunks[0]]
+    kept_sources = [sources[0]]
+
+    for i in range(1, len(chunks)):
+        words_i = set(chunks[i].lower().split())
+        is_overlapping = False
+        for kept in kept_chunks:
+            words_kept = set(kept.lower().split())
+            if not words_i or not words_kept:
+                continue
+            intersection = len(words_i & words_kept)
+            union = len(words_i | words_kept)
+            jaccard = intersection / union if union > 0 else 0.0
+            if jaccard >= overlap_threshold:
+                is_overlapping = True
+                break
+        if not is_overlapping:
+            kept_chunks.append(chunks[i])
+            kept_sources.append(sources[i])
+
+    return kept_chunks, kept_sources

@@ -871,3 +871,49 @@ class MiddlewareTests(TestCase):
         response = self.api_client.get("/api/health/")
         self.assertIn("X-Request-ID", response)
         self.assertEqual(len(response["X-Request-ID"]), 8)
+
+
+class OverlapRemovalTests(TestCase):
+    """Tests for the remove_overlapping_chunks function in retriever.py."""
+
+    def test_single_chunk_passes_through(self):
+        from api.retriever import remove_overlapping_chunks
+        chunks = ["The quick brown fox jumps over the lazy dog."]
+        sources = ["doc1.txt"]
+        result_chunks, result_sources = remove_overlapping_chunks(chunks, sources)
+        self.assertEqual(result_chunks, chunks)
+        self.assertEqual(result_sources, sources)
+
+    def test_high_overlap_chunk_is_removed(self):
+        from api.retriever import remove_overlapping_chunks
+        base = "Machine learning is a subset of artificial intelligence that uses statistical methods to learn from data."
+        # Chunk B is nearly identical — just one extra word.
+        chunk_b = base + " Efficiently."
+        chunks = [base, chunk_b, "Completely different content about cooking recipes."]
+        sources = ["ml.txt", "ml.txt", "cooking.txt"]
+        result_chunks, result_sources = remove_overlapping_chunks(chunks, sources)
+        self.assertEqual(len(result_chunks), 2)
+        self.assertEqual(result_chunks[0], base)
+        self.assertIn("cooking", result_chunks[1])
+
+    def test_distinct_chunks_all_kept(self):
+        from api.retriever import remove_overlapping_chunks
+        chunks = [
+            "Neural networks are computational models inspired by the human brain.",
+            "Quantum computing leverages quantum mechanical phenomena for computation.",
+            "Climate change refers to long-term shifts in global temperatures.",
+        ]
+        sources = ["nn.txt", "qc.txt", "climate.txt"]
+        result_chunks, result_sources = remove_overlapping_chunks(chunks, sources)
+        self.assertEqual(len(result_chunks), 3)
+
+    def test_partial_overlap_below_threshold_is_kept(self):
+        from api.retriever import remove_overlapping_chunks
+        chunk_a = "Deep learning uses neural networks with many layers to learn representations."
+        # Shares a few words but is mostly different content.
+        chunk_b = "Neural networks can also be used for reinforcement learning in robotics and game playing."
+        chunks = [chunk_a, chunk_b]
+        sources = ["dl.txt", "rl.txt"]
+        result_chunks, result_sources = remove_overlapping_chunks(chunks, sources)
+        self.assertEqual(len(result_chunks), 2)
+

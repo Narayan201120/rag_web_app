@@ -10,7 +10,7 @@ from django.conf import settings
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from api.retriever import build_index, search, rerank, get_embedding_model
+from api.retriever import build_index, search, rerank, get_embedding_model, remove_overlapping_chunks
 from api.generator import generate_answer, test_provider_connection, ProviderAPIError
 from api.chunker import semantic_chunk
 from api.compressor import compress_chunks
@@ -792,6 +792,9 @@ class AskView(APIView):
         reranked = rerank(question, top_chunks, top_k=3)
         reranked_chunks = [r["chunk"] for r in reranked]
         reranked_sources = [sources[r["index"]] for r in reranked] if reranked else sources[:3]
+
+        # Remove overlapping chunks to avoid sending redundant context to the LLM.
+        reranked_chunks, reranked_sources = remove_overlapping_chunks(reranked_chunks, reranked_sources)
 
         # Compress chunks to keep only query-relevant sentences.
         try:

@@ -177,6 +177,9 @@ rag_web_app/
 └── render.yaml             # Render deployment config
 ```
 
+Uploaded and scraped documents are stored locally under `backend/documents/`.
+That directory is ignored by Git because it may contain private user data.
+
 ---
 
 ## Running Tests

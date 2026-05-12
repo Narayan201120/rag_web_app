@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient, requestWithRefresh } from '../apiClient';
 
 function Settings({ onLogout }) {
     const [section, setSection] = useState('preferences');
@@ -24,31 +22,13 @@ function Settings({ onLogout }) {
     const [connectionStatus, setConnectionStatus] = useState('');
     const [testingConnection, setTestingConnection] = useState(false);
 
-    const authHeaders = useCallback(() => {
-        const token = localStorage.getItem('access');
-        return token ? { Authorization: `Bearer ${token}` } : {};
-    }, []);
-
-    const requestWithRefresh = useCallback(async (requestFn) => {
-        try {
-            return await requestFn(authHeaders());
-        } catch (err) {
-            if (err.response?.status !== 401) throw err;
-            try {
-                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
-                localStorage.setItem('access', refreshRes.data.access);
-                return await requestFn(authHeaders());
-            } catch (refreshErr) {
-                localStorage.removeItem('access');
-                onLogout();
-                throw refreshErr;
-            }
-        }
-    }, [authHeaders, onLogout]);
+    const authenticatedRequest = useCallback((requestFn) => (
+        requestWithRefresh(requestFn, { onUnauthorized: onLogout })
+    ), [onLogout]);
 
     const fetchApiKeySettings = useCallback(async () => {
         try {
-            const res = await requestWithRefresh((headers) => axios.get(`${API}/settings/api-key/`, { headers }));
+            const res = await authenticatedRequest((headers) => apiClient.get('/settings/api-key/', { headers }));
             setApiKeyDisplay(res.data.api_key || '');
             setProvider(res.data.provider || 'google-gemini');
             setModel(res.data.model || 'gemini-2.5-flash');
@@ -58,7 +38,7 @@ function Settings({ onLogout }) {
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load provider settings');
         }
-    }, [requestWithRefresh]);
+    }, [authenticatedRequest]);
 
     const savePreferences = () => {
         localStorage.setItem('pref_results', resultsCount);
@@ -80,7 +60,7 @@ function Settings({ onLogout }) {
 
     const handleSaveApiKey = async () => {
         try {
-            await requestWithRefresh((headers) => axios.post(`${API}/settings/api-key/`, { provider, model, api_key: apiKey }, { headers }));
+            await authenticatedRequest((headers) => apiClient.post('/settings/api-key/', { provider, model, api_key: apiKey }, { headers }));
             setMessage('Provider, model, and API key saved.');
             setError('');
             setConnectionStatus('');
@@ -97,8 +77,8 @@ function Settings({ onLogout }) {
         setConnectionStatus('');
         setError('');
         try {
-            const res = await requestWithRefresh((headers) => axios.post(
-                `${API}/settings/api-key/test/`,
+            const res = await authenticatedRequest((headers) => apiClient.post(
+                '/settings/api-key/test/',
                 { provider, model, api_key: apiKey },
                 { headers }
             ));
@@ -113,18 +93,18 @@ function Settings({ onLogout }) {
 
     useEffect(() => {
         if (section === 'account') {
-            requestWithRefresh((headers) => axios.get(`${API}/account/`, { headers }))
+            authenticatedRequest((headers) => apiClient.get('/account/', { headers }))
                 .then((res) => setAccount(res.data))
                 .catch((err) => console.error(err));
         }
-    }, [section, requestWithRefresh]);
+    }, [section, authenticatedRequest]);
 
     useEffect(() => {
         if (section === 'admin') {
             Promise.all([
-                requestWithRefresh((headers) => axios.get(`${API}/admin/usage/`, { headers })),
-                requestWithRefresh((headers) => axios.get(`${API}/admin/vectors/`, { headers })),
-                requestWithRefresh((headers) => axios.get(`${API}/status/`, { headers })),
+                authenticatedRequest((headers) => apiClient.get('/admin/usage/', { headers })),
+                authenticatedRequest((headers) => apiClient.get('/admin/vectors/', { headers })),
+                authenticatedRequest((headers) => apiClient.get('/status/', { headers })),
             ])
                 .then(([usageRes, vectorsRes, statusRes]) => {
                     setUsage(usageRes.data);
@@ -136,12 +116,12 @@ function Settings({ onLogout }) {
                     setError(err.response?.data?.error || 'Admin access required');
                 });
         }
-    }, [section, requestWithRefresh]);
+    }, [section, authenticatedRequest]);
 
     const handleDeleteAccount = async () => {
         if (!window.confirm('Are you sure? This cannot be undone!')) return;
         try {
-            await requestWithRefresh((headers) => axios.delete(`${API}/account/delete/`, {
+            await authenticatedRequest((headers) => apiClient.delete('/account/delete/', {
                 headers,
                 data: { password: deletePassword },
             }));

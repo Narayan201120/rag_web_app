@@ -69,6 +69,7 @@ python manage.py runserver
 
 ```bash
 cd frontend
+cp .env.example .env         # edit if your backend URL differs
 npm install
 npm start
 ```
@@ -96,6 +97,20 @@ JWT_SECRET_KEY=your-jwt-secret
 
 # CORS (comma-separated)
 DJANGO_CORS_ALLOWED_ORIGINS=http://localhost:3000
+
+# Optional: encrypt stored provider API keys
+FIELD_ENCRYPTION_KEY=
+
+# Optional: Redis/Celery background tasks
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+```
+
+For the frontend, create `frontend/.env` from `frontend/.env.example`:
+
+```env
+REACT_APP_API_URL=http://127.0.0.1:8000/api
+REACT_APP_GOOGLE_CLIENT_ID=
 ```
 
 ---
@@ -104,20 +119,42 @@ DJANGO_CORS_ALLOWED_ORIGINS=http://localhost:3000
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/auth/signup/` | Register a new user |
-| POST | `/api/auth/signin/` | Obtain JWT access + refresh tokens |
-| POST | `/api/auth/refresh/` | Refresh access token |
-| POST | `/api/auth/logout/` | Blacklist refresh token |
+| POST | `/api/sign-up/` | Register a new user |
+| POST | `/api/sign-in/` | Obtain JWT access token and refresh cookie |
+| POST | `/api/token/refresh/` | Refresh access token from the refresh cookie |
+| POST | `/api/logout/` | Blacklist refresh token and clear refresh cookie |
+| POST | `/api/auth/social/` | Sign in with a supported social provider |
+| GET | `/api/account/` | Get current account details |
+| DELETE | `/api/account/delete/` | Delete the current account |
+| POST | `/api/forgot-password/` | Request a password reset |
+| POST | `/api/reset-password/` | Reset password with a valid token |
 | GET/POST | `/api/settings/api-key/` | Get or save LLM provider + API key |
 | POST | `/api/settings/api-key/test/` | Test LLM provider connectivity |
-| POST | `/api/documents/upload/` | Upload a file |
-| POST | `/api/documents/upload-url/` | Ingest a URL |
-| GET | `/api/documents/list/` | List user documents |
-| DELETE | `/api/documents/delete/<id>/` | Delete a document |
+| POST | `/api/upload/` | Upload a file |
+| POST | `/api/upload-url/` | Ingest a web page or YouTube URL |
+| GET | `/api/documents/` | List user documents |
+| GET/DELETE | `/api/documents/<filename>/` | Preview or delete a document |
+| PUT | `/api/documents/<filename>/move/` | Move a document to a collection |
+| GET/POST | `/api/collections/` | List or create document collections |
 | POST | `/api/ingest/` | Trigger indexing |
-| POST | `/api/ask/` | Ask a question (RAG) |
+| POST | `/api/ask/` | Ask a single RAG question |
+| POST | `/api/chat/` | Ask a question in a persisted conversation |
+| GET | `/api/chat/history/` | List conversations |
+| GET | `/api/chat/conversations/<conversation_id>/` | Get messages in a conversation |
+| POST | `/api/chat/<chat_id>/feedback/` | Submit answer feedback |
+| GET | `/api/chat/<chat_id>/citations/` | Get citations for a chat answer |
+| GET | `/api/chat/<chat_id>/export/` | Export a chat answer |
 | POST | `/api/search/` | Semantic search |
-| GET | `/api/history/` | Chat history |
+| POST | `/api/search/rerank/` | Semantic search with cross-encoder reranking |
+| GET | `/api/search/suggest/?q=<query>` | Search suggestions |
+| GET | `/api/tasks/<task_id>/` | Get background task status |
+| POST | `/api/tasks/<task_id>/cancel/` | Cancel a background task |
+| GET | `/api/status/` | Authenticated system/vector status |
+| GET | `/api/admin/usage/` | Staff-only API usage stats |
+| GET | `/api/admin/vectors/` | Staff-only vector index stats |
+| POST | `/api/evaluate/generate/` | Generate evaluation questions |
+| POST | `/api/evaluate/run/` | Run RAG evaluation |
+| GET | `/api/evaluate/results/` | List evaluation results |
 | GET | `/api/health/` | Health check |
 
 ---
@@ -131,7 +168,7 @@ rag_web_app/
 │   │   ├── views.py        # All API endpoints + web scraping + RAG pipeline
 │   │   ├── generator.py    # LLM provider routing
 │   │   ├── retriever.py    # FAISS index + embedding logic
-│   │   └── models.py       # UserProfile, ChatHistory, Collection, Task
+│   │   └── models.py       # UserProfile, Conversation, ChatMessage, Collection, Task
 │   ├── config/             # Django project settings and URL config
 │   ├── manage.py
 │   └── requirements.txt

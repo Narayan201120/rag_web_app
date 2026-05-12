@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient, setAccessToken } from '../apiClient';
 
 function Login({ onLogin, onSwitch }) {
     const [username, setUsername] = useState('');
@@ -11,11 +9,11 @@ function Login({ onLogin, onSwitch }) {
 
     const handleGoogleResponse = useCallback(async (response) => {
         try {
-            const res = await axios.post(`${API}/auth/social/`, {
+            const res = await apiClient.post('/auth/social/', {
                 provider: 'google',
                 token: response.credential
             }, { withCredentials: true });
-            localStorage.setItem('access', res.data.tokens.access);
+            setAccessToken(res.data.tokens.access);
             onLogin();
         } catch (err) {
             setError(err.response?.data?.error || 'Google sign-in failed.');
@@ -28,7 +26,7 @@ function Login({ onLogin, onSwitch }) {
             if (window.google?.accounts?.id) {
                 clearInterval(checkGoogle);
                 window.google.accounts.id.initialize({
-                    client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '', // We need to add this
+                    client_id: process.env.REACT_APP_GOOGLE_CLIENT_ID || '',
                     callback: handleGoogleResponse
                 });
                 if (googleButtonRef.current) {
@@ -45,8 +43,8 @@ function Login({ onLogin, onSwitch }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const res = await axios.post(`${API}/sign-in/`, { username, password }, { withCredentials: true });
-            localStorage.setItem('access', res.data.tokens.access);
+            const res = await apiClient.post('/sign-in/', { username, password }, { withCredentials: true });
+            setAccessToken(res.data.tokens.access);
             onLogin();
         } catch (err) {
             setError('Invalid username or password.');

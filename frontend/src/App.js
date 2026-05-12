@@ -1,17 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Chat from './components/Chat';
 import Documents from './components/Documents';
 import Search from './components/Search';
 import Settings from './components/Settings';
+import { apiClient, clearAccessToken, getAuthHeaders, hasAccessToken, requestWithRefresh } from './apiClient';
 import './App.css';
 
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
-
 function App() {
-    const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem('access'));
+    const [loggedIn, setLoggedIn] = useState(hasAccessToken());
     const [showSignup, setShowSignup] = useState(false);
     const [page, setPage] = useState('chat');
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -20,36 +18,14 @@ function App() {
     const [conversations, setConversations] = useState([]);
     const [conversationId, setConversationId] = useState(null);
 
-    const authHeaders = useCallback(() => {
-        const token = localStorage.getItem('access');
-        return token ? { Authorization: `Bearer ${token}` } : {};
-    }, []);
-
-    const requestWithRefresh = useCallback(async (requestFn) => {
-        try {
-            return await requestFn(authHeaders());
-        } catch (err) {
-            if (err.response?.status !== 401) throw err;
-            try {
-                // Refresh token is in an HttpOnly cookie — sent automatically.
-                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
-                localStorage.setItem('access', refreshRes.data.access);
-                return await requestFn(authHeaders());
-            } catch (refreshErr) {
-                localStorage.removeItem('access');
-                throw refreshErr;
-            }
-        }
-    }, [authHeaders]);
-
     const loadConversations = useCallback(async () => {
         try {
-            const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/history/`, { headers }));
+            const res = await requestWithRefresh((headers) => apiClient.get('/chat/history/', { headers }));
             setConversations(res.data.conversations || []);
         } catch (err) {
             console.error(err);
         }
-    }, [requestWithRefresh]);
+    }, []);
 
     useEffect(() => {
         if (loggedIn) {
@@ -64,15 +40,14 @@ function App() {
 
     const handleLogout = async () => {
         try {
-            const token = localStorage.getItem('access');
-            await axios.post(`${API}/logout/`, {}, {
-                headers: token ? { Authorization: `Bearer ${token}` } : {},
+            await apiClient.post('/logout/', {}, {
+                headers: getAuthHeaders(),
                 withCredentials: true
             });
         } catch (e) {
             // Best-effort — clear local state regardless.
         }
-        localStorage.removeItem('access');
+        clearAccessToken();
         setLoggedIn(false);
         setConversations([]);
         setConversationId(null);

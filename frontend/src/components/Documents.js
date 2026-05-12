@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient, requestWithRefresh } from '../apiClient';
 
 // Render LaTeX using KaTeX (loaded from CDN in index.html).
 // Returns an HTML string on success, or null if KaTeX isn't ready.
@@ -170,27 +168,6 @@ function Documents() {
         }
     }, [previewDoc]);
 
-    const authHeaders = useCallback(() => {
-        const token = localStorage.getItem('access');
-        return token ? { Authorization: `Bearer ${token}` } : {};
-    }, []);
-
-    const requestWithRefresh = useCallback(async (requestFn) => {
-        try {
-            return await requestFn(authHeaders());
-        } catch (err) {
-            if (err.response?.status !== 401) throw err;
-            try {
-                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
-                localStorage.setItem('access', refreshRes.data.access);
-                return await requestFn(authHeaders());
-            } catch (refreshErr) {
-                localStorage.removeItem('access');
-                throw refreshErr;
-            }
-        }
-    }, [authHeaders]);
-
     const normalizeHttpUrl = (rawValue) => {
         const trimmed = (rawValue || '').trim();
         if (!trimmed) return null;
@@ -210,13 +187,13 @@ function Documents() {
 
     const fetchDocs = useCallback(async () => {
         try {
-            const res = await requestWithRefresh((headers) => axios.get(`${API}/documents/`, { headers }));
+            const res = await requestWithRefresh((headers) => apiClient.get('/documents/', { headers }));
             setDocuments(res.data.documents);
         } catch (err) {
             setDocuments([]);
             setMessage(err.response?.data?.error || 'Failed to load documents. Please sign in again.');
         }
-    }, [requestWithRefresh]);
+    }, []);
 
     const stopPolling = () => {
         if (pollRef.current) {
@@ -237,7 +214,7 @@ function Documents() {
 
         pollRef.current = setInterval(async () => {
             try {
-                const res = await requestWithRefresh((headers) => axios.get(`${API}/tasks/${taskId}/`, { headers }));
+                const res = await requestWithRefresh((headers) => apiClient.get(`/tasks/${taskId}/`, { headers }));
                 const task = res.data;
                 setTaskInfo({
                     id: taskId,
@@ -274,7 +251,7 @@ function Documents() {
         const formData = new FormData();
         formData.append('document', file);
         try {
-            const res = await requestWithRefresh((headers) => axios.post(`${API}/upload/`, formData, {
+            const res = await requestWithRefresh((headers) => apiClient.post('/upload/', formData, {
                 headers: { ...headers, 'Content-Type': 'multipart/form-data' },
             }));
             setMessage(res.data.message || 'Upload task queued.');
@@ -293,7 +270,7 @@ function Documents() {
             return;
         }
         try {
-            const res = await requestWithRefresh((headers) => axios.post(`${API}/upload-url/`, { url: normalizedUrl }, { headers }));
+            const res = await requestWithRefresh((headers) => apiClient.post('/upload-url/', { url: normalizedUrl }, { headers }));
             setMessage(res.data.message || 'URL ingestion task queued.');
             setUrl('');
             startPollingTask(res.data.task_id);
@@ -305,7 +282,7 @@ function Documents() {
     const handleDelete = async (filename) => {
         if (!window.confirm(`Delete "${filename}"?`)) return;
         try {
-            await requestWithRefresh((headers) => axios.delete(`${API}/documents/${encodeURIComponent(filename)}/`, { headers }));
+            await requestWithRefresh((headers) => apiClient.delete(`/documents/${encodeURIComponent(filename)}/`, { headers }));
             setMessage(`"${filename}" deleted.`);
             fetchDocs();
         } catch (err) {
@@ -316,7 +293,7 @@ function Documents() {
     const handleOpen = async (filename) => {
         setPreviewLoading(true);
         try {
-            const res = await requestWithRefresh((headers) => axios.get(`${API}/documents/${encodeURIComponent(filename)}/`, { headers }));
+            const res = await requestWithRefresh((headers) => apiClient.get(`/documents/${encodeURIComponent(filename)}/`, { headers }));
             setPreviewDoc(res.data);
         } catch (err) {
             setMessage(err.response?.data?.error || 'Failed to open document.');

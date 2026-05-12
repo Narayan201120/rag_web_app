@@ -1,34 +1,36 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient, requestWithRefresh } from '../apiClient';
 
 function Account({ onLogout }) {
     const [account, setAccount] = useState(null);
     const [password, setPassword] = useState('');
     const [message, setMessage] = useState('');
-    const token = localStorage.getItem('access');
-    const headers = { Authorization: `Bearer ${token}` };
 
     useEffect(() => {
         const fetchAccount = async () => {
             try {
-                const res = await axios.get(`${API}/account/`, { headers });
+                const res = await requestWithRefresh(
+                    (headers) => apiClient.get('/account/', { headers }),
+                    { onUnauthorized: onLogout }
+                );
                 setAccount(res.data);
             } catch (err) {
                 console.error(err);
             }
         };
         fetchAccount();
-    }, []);
+    }, [onLogout]);
 
     const handleDelete = async () => {
         if (!window.confirm('Are you sure? This cannot be undone!')) return;
         try {
-            await axios.delete(`${API}/account/delete/`, {
-                headers,
-                data: { password },
-            });
+            await requestWithRefresh(
+                (headers) => apiClient.delete('/account/delete/', {
+                    headers,
+                    data: { password },
+                }),
+                { onUnauthorized: onLogout }
+            );
             alert('Account deleted.');
             onLogout();
         } catch (err) {

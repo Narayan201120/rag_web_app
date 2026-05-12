@@ -1,23 +1,19 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient, requestWithRefresh } from '../apiClient';
 
 function Admin() {
     const [usage, setUsage] = useState(null);
     const [vectors, setVectors] = useState(null);
     const [status, setStatus] = useState(null);
     const [error, setError] = useState('');
-    const token = localStorage.getItem('access');
-    const headers = { Authorization: `Bearer ${token}` };
 
     useEffect(() => {
         const fetchAll = async () => {
             try {
                 const [usageRes, vectorsRes, statusRes] = await Promise.all([
-                    axios.get(`${API}/admin/usage/`, { headers }),
-                    axios.get(`${API}/admin/vectors/`, { headers }),
-                    axios.get(`${API}/status/`, { headers }),
+                    requestWithRefresh((headers) => apiClient.get('/admin/usage/', { headers })),
+                    requestWithRefresh((headers) => apiClient.get('/admin/vectors/', { headers })),
+                    requestWithRefresh((headers) => apiClient.get('/status/', { headers })),
                 ]);
                 setUsage(usageRes.data);
                 setVectors(vectorsRes.data);

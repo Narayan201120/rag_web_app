@@ -1,7 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { useState, useEffect, useRef } from 'react';
+import { apiClient, requestWithRefresh } from '../apiClient';
 
 const INLINE_MD_RE = /(\$[^$]+\$|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
 
@@ -98,27 +96,6 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
     const [feedbackState, setFeedbackState] = useState({});
     const fileInputRef = useRef(null);
 
-    const authHeaders = useCallback(() => {
-        const token = localStorage.getItem('access');
-        return token ? { Authorization: `Bearer ${token}` } : {};
-    }, []);
-
-    const requestWithRefresh = useCallback(async (requestFn) => {
-        try {
-            return await requestFn(authHeaders());
-        } catch (err) {
-            if (err.response?.status !== 401) throw err;
-            try {
-                const refreshRes = await axios.post(`${API}/token/refresh/`, {}, { withCredentials: true });
-                localStorage.setItem('access', refreshRes.data.access);
-                return await requestFn(authHeaders());
-            } catch (refreshErr) {
-                localStorage.removeItem('access');
-                throw refreshErr;
-            }
-        }
-    }, [authHeaders]);
-
     // Load conversation messages when conversationId changes from parent
     useEffect(() => {
         if (!conversationId) {
@@ -128,7 +105,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
         }
         const loadMessages = async () => {
             try {
-                const res = await requestWithRefresh((headers) => axios.get(`${API}/chat/conversations/${conversationId}/`, { headers }));
+                const res = await requestWithRefresh((headers) => apiClient.get(`/chat/conversations/${conversationId}/`, { headers }));
                 setMessages(
                     res.data.messages.map((m) => ({
                         question: m.question,
@@ -141,7 +118,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
             }
         };
         loadMessages();
-    }, [conversationId, requestWithRefresh]);
+    }, [conversationId]);
 
     const askQuestion = async (e) => {
         e.preventDefault();
@@ -153,7 +130,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
             if (conversationId) {
                 body.conversation_id = conversationId;
             }
-            const res = await requestWithRefresh((headers) => axios.post(`${API}/chat/`, body, { headers }));
+            const res = await requestWithRefresh((headers) => apiClient.post('/chat/', body, { headers }));
 
             if (res.data.conversation_id) {
                 onLoadConversation(res.data.conversation_id, false); // update parent's conversationId without reloading messages
@@ -189,7 +166,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
         formData.append('document', selectedFile);
 
         try {
-            const res = await requestWithRefresh((headers) => axios.post(`${API}/upload/`, formData, {
+            const res = await requestWithRefresh((headers) => apiClient.post('/upload/', formData, {
                 headers: { ...headers, 'Content-Type': 'multipart/form-data' },
             }));
             alert(res.data.message || `Queued upload for "${selectedFile.name}".`);
@@ -202,7 +179,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
 
     const submitFeedback = async (chatId, rating) => {
         try {
-            await requestWithRefresh((headers) => axios.post(`${API}/chat/${chatId}/feedback/`, { rating }, { headers }));
+            await requestWithRefresh((headers) => apiClient.post(`/chat/${chatId}/feedback/`, { rating }, { headers }));
             setFeedbackState((prev) => ({ ...prev, [chatId]: rating }));
         } catch (err) {
             console.error('Feedback failed:', err);

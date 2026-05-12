@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient, requestWithRefresh } from '../apiClient';
 
 function Search() {
     const [query, setQuery] = useState('');
@@ -9,8 +7,6 @@ function Search() {
     const [suggestions, setSuggestions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [mode, setMode] = useState('search');
-    const token = localStorage.getItem('access');
-    const headers = { Authorization: `Bearer ${token}` };
 
     const handleSearch = async (e) => {
         e.preventDefault();
@@ -18,7 +14,7 @@ function Search() {
         setLoading(true);
         const endpoint = mode === 'rerank' ? '/search/rerank/' : '/search/';
         try {
-            const res = await axios.post(`${API}${endpoint}`, { query }, { headers });
+            const res = await requestWithRefresh((headers) => apiClient.post(endpoint, { query }, { headers }));
             setResults(res.data.results || []);
         } catch (err) {
             alert('Search failed');
@@ -33,7 +29,10 @@ function Search() {
             return;
         }
         try {
-            const res = await axios.get(`${API}/search/suggest/?q=${value}`, { headers });
+            const res = await requestWithRefresh((headers) => apiClient.get('/search/suggest/', {
+                headers,
+                params: { q: value },
+            }));
             setSuggestions(res.data.suggestions || []);
         } catch (err) {
             setSuggestions([]);

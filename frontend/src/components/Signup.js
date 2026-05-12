@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
-
-const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000/api';
+import { apiClient } from '../apiClient';
 
 function Signup({ onSwitch }) {
     const [username, setUsername] = useState('');
@@ -13,7 +11,7 @@ function Signup({ onSwitch }) {
 
     const handleGoogleResponse = useCallback(async (response) => {
         try {
-            await axios.post(`${API}/auth/social/`, {
+            await apiClient.post('/auth/social/', {
                 provider: 'google',
                 token: response.credential
             }, { withCredentials: true });
@@ -48,7 +46,7 @@ function Signup({ onSwitch }) {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            await axios.post(`${API}/sign-up/`, { username, email, password });
+            await apiClient.post('/sign-up/', { username, email, password });
             setMessage('Account created. You can now sign in.');
             setError('');
         } catch (err) {

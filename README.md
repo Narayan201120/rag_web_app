@@ -113,6 +113,15 @@ REACT_APP_API_URL=http://127.0.0.1:8000/api
 REACT_APP_GOOGLE_CLIENT_ID=
 ```
 
+When `DJANGO_DEBUG=false`, the backend requires production values for
+`DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`,
+`DJANGO_ALLOWED_HOSTS`, `DJANGO_CORS_ALLOWED_ORIGINS`, and `DATABASE_URL`.
+Generate `FIELD_ENCRYPTION_KEY` with:
+
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
 ---
 
 ## API Overview

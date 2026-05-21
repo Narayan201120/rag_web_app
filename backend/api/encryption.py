@@ -8,21 +8,19 @@ Generate one with:
 Store it in .env and in Render environment variables.
 """
 
-import os
 import logging
+from django.conf import settings
 from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger(__name__)
 
-_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
-
-
 def _get_fernet():
     """Return a Fernet instance, or None if no key is configured."""
-    if not _ENCRYPTION_KEY:
+    encryption_key = getattr(settings, "FIELD_ENCRYPTION_KEY", "")
+    if not encryption_key:
         return None
     try:
-        return Fernet(_ENCRYPTION_KEY.encode())
+        return Fernet(encryption_key.encode())
     except Exception:
         logger.warning("FIELD_ENCRYPTION_KEY is set but invalid. Encryption disabled.")
         return None

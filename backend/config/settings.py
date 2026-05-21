@@ -14,9 +14,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 import os
 import dj_database_url
+from cryptography.fernet import Fernet
+from django.core.exceptions import ImproperlyConfigured
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+DEV_SECRET_KEY = "dev-only-change-me-secret-key"
 
 
 # Quick-start development settings - unsuitable for production
@@ -25,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 # Keep JWT signing stable across local restarts when DJANGO_SECRET_KEY isn't set.
 # Override with DJANGO_SECRET_KEY in production.
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-only-change-me-secret-key")
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
@@ -91,6 +96,8 @@ CORS_ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "").strip()
 
 
 # Database
@@ -190,7 +197,8 @@ REST_FRAMEWORK = {
 
 from datetime import timedelta
 
-JWT_SIGNING_KEY = os.getenv("JWT_SECRET_KEY", SECRET_KEY)
+JWT_SIGNING_KEY_ENV = os.getenv("JWT_SECRET_KEY", "").strip()
+JWT_SIGNING_KEY = JWT_SIGNING_KEY_ENV or SECRET_KEY
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME':
@@ -199,6 +207,49 @@ SIMPLE_JWT = {
     timedelta(days=1),
     'SIGNING_KEY': JWT_SIGNING_KEY,
 }
+
+
+def _validate_fernet_key(value):
+    try:
+        Fernet(value.encode())
+    except Exception as exc:
+        raise ImproperlyConfigured(
+            "FIELD_ENCRYPTION_KEY must be a valid Fernet key. Generate one with: "
+            "python -c \"from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())\""
+        ) from exc
+
+
+def _validate_production_settings():
+    if DEBUG:
+        if FIELD_ENCRYPTION_KEY:
+            _validate_fernet_key(FIELD_ENCRYPTION_KEY)
+        return
+
+    missing = []
+    if SECRET_KEY == DEV_SECRET_KEY:
+        missing.append("DJANGO_SECRET_KEY")
+    if not JWT_SIGNING_KEY_ENV:
+        missing.append("JWT_SECRET_KEY")
+    if not FIELD_ENCRYPTION_KEY:
+        missing.append("FIELD_ENCRYPTION_KEY")
+    if not ALLOWED_HOSTS:
+        missing.append("DJANGO_ALLOWED_HOSTS")
+    if not os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "").strip():
+        missing.append("DJANGO_CORS_ALLOWED_ORIGINS")
+    if not DATABASE_URL:
+        missing.append("DATABASE_URL")
+
+    if missing:
+        raise ImproperlyConfigured(
+            "Missing required production environment variables: "
+            + ", ".join(sorted(missing))
+        )
+
+    _validate_fernet_key(FIELD_ENCRYPTION_KEY)
+
+
+_validate_production_settings()
 
 # Celery
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')

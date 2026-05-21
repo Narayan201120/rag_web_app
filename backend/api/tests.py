@@ -830,6 +830,28 @@ class JSONLogFormatterTests(TestCase):
         self.assertIn("timestamp", parsed)
 
 
+class EncryptionTests(TestCase):
+    """Tests for optional provider API key encryption."""
+
+    def test_encrypt_returns_plaintext_without_configured_key(self):
+        from api.encryption import decrypt_value, encrypt_value
+
+        stored = encrypt_value("sk-test-key")
+
+        self.assertEqual(stored, "sk-test-key")
+        self.assertEqual(decrypt_value(stored), "sk-test-key")
+
+    @override_settings(FIELD_ENCRYPTION_KEY="Hj__dnfe_0aVSpiv88KiW4ANcyfQZZpPYJGSIM1Pr1Q=")
+    def test_encrypt_decrypt_round_trip_with_configured_key(self):
+        from api.encryption import decrypt_value, encrypt_value
+
+        stored = encrypt_value("sk-test-key")
+
+        self.assertTrue(stored.startswith("enc:"))
+        self.assertNotIn("sk-test-key", stored)
+        self.assertEqual(decrypt_value(stored), "sk-test-key")
+
+
 class CustomExceptionHandlerTests(TestCase):
     """Tests for the custom exception handler."""
 
@@ -916,4 +938,3 @@ class OverlapRemovalTests(TestCase):
         sources = ["dl.txt", "rl.txt"]
         result_chunks, result_sources = remove_overlapping_chunks(chunks, sources)
         self.assertEqual(len(result_chunks), 2)
-

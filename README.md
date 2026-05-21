@@ -38,7 +38,7 @@ A full-stack Retrieval-Augmented Generation (RAG) application that lets you uplo
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12+
 - Node 18+
 - PostgreSQL (or use SQLite for local dev)
 

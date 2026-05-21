@@ -8,6 +8,8 @@ services:
     envVars:
       - key: DJANGO_DEBUG
         value: false
+      - key: PYTHON_VERSION
+        value: 3.12
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: JWT_SECRET_KEY
@@ -18,8 +20,6 @@ services:
         fromDatabase:
           name: rag-db
           property: connectionString
-      - key: DJANGO_ALLOWED_HOSTS
-        sync: false
       - key: DJANGO_CORS_ALLOWED_ORIGINS
         sync: false
       - key: DJANGO_DB_SSL_REQUIRE

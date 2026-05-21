@@ -114,13 +114,30 @@ REACT_APP_GOOGLE_CLIENT_ID=
 ```
 
 When `DJANGO_DEBUG=false`, the backend requires production values for
-`DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`,
-`DJANGO_ALLOWED_HOSTS`, `DJANGO_CORS_ALLOWED_ORIGINS`, and `DATABASE_URL`.
+`DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, and
+`DATABASE_URL`. `DJANGO_ALLOWED_HOSTS` defaults to Render's
+`RENDER_EXTERNAL_HOSTNAME` when deployed on Render; set it explicitly only for
+custom domains or non-Render hosting. `DJANGO_CORS_ALLOWED_ORIGINS` defaults to
+Render's backend URL, but should be set to your frontend URL when the frontend
+is hosted separately.
 Generate `FIELD_ENCRYPTION_KEY` with:
 
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+### Render
+
+If you deploy from `render.yaml`, Render creates the Postgres database, sets
+`DATABASE_URL`, and generates `DJANGO_SECRET_KEY` and `JWT_SECRET_KEY`. You still
+need to provide `FIELD_ENCRYPTION_KEY` and your frontend origin for
+`DJANGO_CORS_ALLOWED_ORIGINS` when Render prompts for `sync: false` values.
+
+If you created the Render backend manually as a Docker service, `render.yaml`
+does not populate the service environment. Add these variables in the Render
+dashboard: `DATABASE_URL`, `DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`,
+`FIELD_ENCRYPTION_KEY`, `DJANGO_DEBUG=false`, `DJANGO_DB_SSL_REQUIRE=true`, and
+`DJANGO_CORS_ALLOWED_ORIGINS=<your frontend URL>`.
 
 ---
 

@@ -24,6 +24,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DEV_SECRET_KEY = "dev-only-change-me-secret-key"
 
 
+def _csv_env(name, default=""):
+    return [
+        value.strip()
+        for value in os.getenv(name, default).split(",")
+        if value.strip()
+    ]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -35,12 +43,9 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
 
-default_hosts = "localhost,127.0.0.1" if DEBUG else ""
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv("DJANGO_ALLOWED_HOSTS", default_hosts).split(",")
-    if host.strip()
-]
+render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+default_hosts = "localhost,127.0.0.1" if DEBUG else render_external_hostname
+ALLOWED_HOSTS = _csv_env("DJANGO_ALLOWED_HOSTS", default_hosts)
 
 
 # Application definition
@@ -90,11 +95,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
-CORS_ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-    if origin.strip()
-]
+render_external_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
+default_cors_origins = "http://localhost:3000" if DEBUG else render_external_url
+CORS_ALLOWED_ORIGINS = _csv_env("DJANGO_CORS_ALLOWED_ORIGINS", default_cors_origins)
 CORS_ALLOW_CREDENTIALS = True
 
 FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "").strip()
@@ -235,7 +238,7 @@ def _validate_production_settings():
         missing.append("FIELD_ENCRYPTION_KEY")
     if not ALLOWED_HOSTS:
         missing.append("DJANGO_ALLOWED_HOSTS")
-    if not os.getenv("DJANGO_CORS_ALLOWED_ORIGINS", "").strip():
+    if not CORS_ALLOWED_ORIGINS:
         missing.append("DJANGO_CORS_ALLOWED_ORIGINS")
     if not DATABASE_URL:
         missing.append("DATABASE_URL")

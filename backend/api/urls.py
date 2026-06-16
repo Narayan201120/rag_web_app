@@ -22,6 +22,7 @@ urlpatterns = [
     path('search/', views.SearchView.as_view(), name='search'),
     path('upload-url/', views.UploadURLView.as_view(), name='upload-url'),
     path('chat/', views.ChatView.as_view(), name='chat'),
+    path('chat/stream/', views.ChatStreamView.as_view(), name='chat-stream'),
     path('chat/history/', views.ChatHistoryView.as_view(), name='chat-history'),
     path('ingest/', views.IngestView.as_view(), name='ingest'),
     path('status/', views.StatusView.as_view(), name='status'),

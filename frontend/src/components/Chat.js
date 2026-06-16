@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { apiClient, requestWithRefresh } from '../apiClient';
+import { apiClient, requestWithRefresh, streamChatEvents } from '../apiClient';
 
 const INLINE_MD_RE = /(\$[^$]+\$|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
 
@@ -93,8 +93,14 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
     const [question, setQuestion] = useState('');
     const [messages, setMessages] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [streamingAnswer, setStreamingAnswer] = useState(null);
     const [feedbackState, setFeedbackState] = useState({});
     const fileInputRef = useRef(null);
+    const chatEndRef = useRef(null);
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages, streamingAnswer]);
 
     // Load conversation messages when conversationId changes from parent
     useEffect(() => {
@@ -108,6 +114,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                 const res = await requestWithRefresh((headers) => apiClient.get(`/chat/conversations/${conversationId}/`, { headers }));
                 setMessages(
                     res.data.messages.map((m) => ({
+                        id: m.id,
                         question: m.question,
                         answer: m.answer,
                         sources: m.sources,
@@ -124,31 +131,45 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
         e.preventDefault();
         if (!question.trim()) return;
         setLoading(true);
+        const askedQuestion = question;
+        setQuestion('');
+
+        setStreamingAnswer({ question: askedQuestion, answer: '', sources: [], id: null, conversationId: null });
 
         try {
-            const body = { question };
+            const body = { question: askedQuestion };
             if (conversationId) {
                 body.conversation_id = conversationId;
             }
-            const res = await requestWithRefresh((headers) => apiClient.post('/chat/', body, { headers }));
 
-            if (res.data.conversation_id) {
-                onLoadConversation(res.data.conversation_id, false); // update parent's conversationId without reloading messages
+            for await (const event of streamChatEvents(body)) {
+                if (event.error) {
+                    setStreamingAnswer(null);
+                    alert(`Error: ${event.error}`);
+                    break;
+                }
+                if (event.token) {
+                    setStreamingAnswer((prev) => prev ? { ...prev, answer: prev.answer + event.token } : null);
+                }
+                if (event.done) {
+                    const newMsg = {
+                        id: event.id,
+                        conversationId: event.conversation_id,
+                        question: askedQuestion,
+                        answer: event.answer,
+                        sources: event.sources || [],
+                    };
+                    setMessages((prev) => [...prev, newMsg]);
+                    setStreamingAnswer(null);
+                    if (event.conversation_id) {
+                        onLoadConversation(event.conversation_id, false);
+                    }
+                }
             }
-
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: res.data.id,
-                    question,
-                    answer: res.data.answer,
-                    sources: res.data.sources,
-                },
-            ]);
-            setQuestion('');
             onRefreshConversations();
         } catch (err) {
-            alert(`Error: ${err.response?.data?.error || 'Something went wrong'}`);
+            setStreamingAnswer(null);
+            alert(`Error: ${err.message || 'Something went wrong'}`);
         }
 
         setLoading(false);
@@ -254,16 +275,29 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                     </div>
                 ))}
                 
-                {loading && (
-                    <div className="message-container ai-message-wrapper" style={{ marginTop: '2rem' }}>
-                        <div className="ai-avatar">
-                            <span className="material-symbols-outlined ai-avatar-icon animate-pulse">smart_toy</span>
+                {streamingAnswer && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                        <div className="message-container user-message-wrapper">
+                            <div className="user-message">
+                                <p>{streamingAnswer.question}</p>
+                            </div>
                         </div>
-                        <div className="ai-message">
-                            <p className="animate-pulse">Analyzing context...</p>
+                        <div className="message-container ai-message-wrapper">
+                            <div className="ai-avatar">
+                                <span className="material-symbols-outlined ai-avatar-icon">smart_toy</span>
+                            </div>
+                            <div className="ai-message">
+                                {streamingAnswer.answer ? (
+                                    renderAnswerMarkdown(streamingAnswer.answer)
+                                ) : (
+                                    <p className="animate-pulse">Analyzing context...</p>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
+                
+                <div ref={chatEndRef} />
             </div>
 
             <div className="compose-area">

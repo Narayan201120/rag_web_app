@@ -44,3 +44,51 @@ export async function requestWithRefresh(requestFn, options = {}) {
         }
     }
 }
+
+async function tryRefreshToken() {
+    try {
+        const refreshRes = await apiClient.post('/token/refresh/', {}, { withCredentials: true });
+        setAccessToken(refreshRes.data.access);
+        return true;
+    } catch {
+        clearAccessToken();
+        return false;
+    }
+}
+
+export async function* streamChatEvents(body) {
+    const url = `${API_BASE_URL}/chat/stream/`;
+    let headers = getAuthHeaders();
+    headers['Content-Type'] = 'application/json';
+
+    let response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+
+    if (response.status === 401) {
+        const refreshed = await tryRefreshToken();
+        if (!refreshed) throw new Error('Session expired.');
+        headers = { ...getAuthHeaders(), 'Content-Type': 'application/json' };
+        response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    }
+
+    if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(errBody.error || `Request failed (${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                yield JSON.parse(line.slice(6));
+            }
+        }
+    }
+}

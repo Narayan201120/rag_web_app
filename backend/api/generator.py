@@ -49,6 +49,21 @@ def _generate_with_openai_compatible(prompt, api_key, model, base_url, max_token
     raise ProviderAPIError("Provider returned an empty response.", status_code=502)
 
 
+def _stream_openai_compatible(prompt, api_key, model, base_url, max_tokens=1200):
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    for chunk in response:
+        token = chunk.choices[0].delta.content or ""
+        if token:
+            yield token
+
+
 def _generate_with_gemini(prompt, api_key, model):
     if google_genai is not None:
         try:
@@ -74,6 +89,35 @@ def _generate_with_gemini(prompt, api_key, model):
         if text:
             return text
         raise ProviderAPIError("Gemini returned an empty response.", status_code=502)
+    except Exception as e:
+        raise ProviderAPIError(f"Google Gemini error: {e}", status_code=400)
+
+
+def _stream_gemini(prompt, api_key, model):
+    if google_genai is not None:
+        try:
+            client = google_genai.Client(api_key=api_key)
+            response = client.models.generate_content_stream(
+                model=model,
+                contents=prompt,
+            )
+            for chunk in response:
+                token = getattr(chunk, "text", None)
+                if token:
+                    yield token
+            return
+        except Exception as e:
+            raise ProviderAPIError(f"Google Gemini error: {e}", status_code=400)
+
+    try:
+        import google.generativeai as legacy_genai
+        legacy_genai.configure(api_key=api_key)
+        legacy_model = legacy_genai.GenerativeModel(model)
+        response = legacy_model.generate_content(prompt, stream=True)
+        for chunk in response:
+            token = getattr(chunk, "text", None)
+            if token:
+                yield token
     except Exception as e:
         raise ProviderAPIError(f"Google Gemini error: {e}", status_code=400)
 
@@ -109,6 +153,54 @@ def _generate_with_anthropic(prompt, api_key, model, max_tokens=1200):
         if text:
             return text
         raise ProviderAPIError("Anthropic returned an empty response.", status_code=502)
+    except ProviderAPIError:
+        raise
+    except Exception as e:
+        raise ProviderAPIError(f"Anthropic error: {e}", status_code=400)
+
+
+def _stream_anthropic(prompt, api_key, model, max_tokens=1200):
+    url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1/messages")
+    try:
+        response = requests.post(
+            url,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": True,
+            },
+            timeout=60,
+            stream=True,
+        )
+        if response.status_code >= 400:
+            try:
+                payload = response.json()
+                message = payload.get("error", {}).get("message") or str(payload)
+            except Exception:
+                message = response.text
+            raise ProviderAPIError(f"Anthropic error: {message}", status_code=response.status_code)
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+            data = line[6:]
+            if data == "[DONE]":
+                break
+            try:
+                import json
+                event = json.loads(data)
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta", {})
+                    text = delta.get("text", "")
+                    if text:
+                        yield text
+            except json.JSONDecodeError:
+                continue
     except ProviderAPIError:
         raise
     except Exception as e:
@@ -193,6 +285,72 @@ def generate_answer(query, context_chunks, provider, model, api_key, chat_histor
 
     prompt = _build_prompt(query, context_chunks, chat_history=chat_history)
     return _generate_with_provider(provider, model, key, prompt, max_tokens=1200)
+
+
+def _stream_with_provider(provider, model, key, prompt, max_tokens=1200):
+    try:
+        if provider == "google-gemini":
+            return _stream_gemini(prompt, key, model)
+        if provider == "openai":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "mistral":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("MISTRAL_BASE_URL", "https://api.mistral.ai/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "xai":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("XAI_BASE_URL", "https://api.x.ai/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "qwen":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("QWEN_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "minimax":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "meta-llama":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("LLAMA_BASE_URL", "https://api.llama.com/compat/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "anthropic":
+            return _stream_anthropic(prompt, key, model, max_tokens=max_tokens)
+        if provider == "other":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("OTHER_LLM_BASE_URL", "https://api.openai.com/v1"),
+                max_tokens=max_tokens,
+            )
+        raise ValueError(f'Unknown provider "{provider}".')
+    except ProviderAPIError:
+        raise
+    except Exception as e:
+        raise ProviderAPIError(f"{provider} error: {e}", status_code=400)
+
+
+def generate_answer_stream(query, context_chunks, provider, model, api_key, chat_history=None):
+    key = (api_key or "").strip()
+    if not key:
+        raise ValueError("No API key is configured. Please add your provider, model, and API key in Settings.")
+    if not model:
+        raise ValueError("No model is configured. Please select a model in Settings.")
+
+    prompt = _build_prompt(query, context_chunks, chat_history=chat_history)
+    return _stream_with_provider(provider, model, key, prompt, max_tokens=1200)
 
 
 def test_provider_connection(provider, model, api_key):

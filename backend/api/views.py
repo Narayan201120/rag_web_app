@@ -7,11 +7,12 @@ import html as html_lib
 from urllib.parse import urlparse, unquote, parse_qs
 from pathlib import Path
 from django.conf import settings
+from django.http import StreamingHttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from api.retriever import build_index, search, rerank, get_embedding_model, remove_overlapping_chunks
-from api.generator import generate_answer, test_provider_connection, ProviderAPIError
+from api.generator import generate_answer, generate_answer_stream, test_provider_connection, ProviderAPIError
 from api.chunker import semantic_chunk
 from api.compressor import compress_chunks
 from api.throttles import ChatRateThrottle
@@ -1297,6 +1298,125 @@ class ChatView(APIView):
             'sources': chat.sources,
             'created_at': chat.created_at,
         }, status=status.HTTP_200_OK)
+
+""" CHAT STREAM VIEW """
+import json as _json
+
+class ChatStreamView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ChatRateThrottle]
+
+    def post(self, request):
+        ensure_documents_loaded(request.user)
+        question = request.data.get('question')
+        conversation_id = request.data.get('conversation_id')
+
+        if not question or not question.strip():
+            return Response(
+                {'error': 'Please provide a non-empty question.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if index is None or index.ntotal == 0:
+            return Response(
+                {'error': 'No indexed documents found. Upload documents and run ingestion first.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if conversation_id:
+            try:
+                conversation = Conversation.objects.get(id=conversation_id, user=request.user)
+            except Conversation.DoesNotExist:
+                return Response(
+                    {'error': 'Conversation not found.'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        else:
+            conversation = Conversation.objects.create(
+                user=request.user,
+                title=question[:50],
+            )
+
+        past_messages = ChatMessage.objects.filter(
+            conversation=conversation
+        ).order_by('created_at')
+        chat_history = [
+            {'question': m.question, 'answer': m.answer}
+            for m in past_messages
+        ]
+
+        top_chunks, top_indices = search(question, docs, index, embeddings, top_k=10)
+        sources = [chunk_sources[i] for i in top_indices]
+
+        reranked = rerank(question, top_chunks, top_k=3)
+        reranked_chunks = [r["chunk"] for r in reranked]
+        reranked_sources = [sources[r["index"]] for r in reranked] if reranked else sources[:3]
+
+        reranked_chunks, reranked_sources = remove_overlapping_chunks(reranked_chunks, reranked_sources)
+
+        try:
+            compressed = compress_chunks(question, reranked_chunks, get_embedding_model())
+        except Exception:
+            compressed = reranked_chunks
+
+        final_chunks = compressed if compressed else reranked_chunks
+        final_sources = reranked_sources
+
+        try:
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            allowed_models = PROVIDER_MODELS.get(profile.llm_provider, [])
+            if profile.llm_model not in allowed_models:
+                return Response(
+                    {'error': 'Selected model is not valid for the chosen provider. Update Settings.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        provider = profile.llm_provider
+        model = profile.llm_model
+        api_key = decrypt_value(profile.llm_api_key)
+
+        def event_stream():
+            full_answer = ""
+            try:
+                stream_iter = generate_answer_stream(
+                    question,
+                    final_chunks,
+                    provider=provider,
+                    model=model,
+                    api_key=api_key,
+                    chat_history=chat_history,
+                )
+                for token in stream_iter:
+                    full_answer += token
+                    yield f"data: {_json.dumps({'token': token})}\n\n"
+            except ValueError as e:
+                yield f"data: {_json.dumps({'error': str(e)})}\n\n"
+                return
+            except ProviderAPIError as e:
+                yield f"data: {_json.dumps({'error': str(e)})}\n\n"
+                return
+            except Exception:
+                yield f"data: {_json.dumps({'error': 'The answer service is temporarily unavailable'})}\n\n"
+                return
+
+            try:
+                chat = ChatMessage.objects.create(
+                    user=request.user,
+                    conversation=conversation,
+                    question=question,
+                    answer=full_answer,
+                    sources=final_sources,
+                    chunks=final_chunks,
+                )
+                yield f"data: {_json.dumps({'done': True, 'id': chat.id, 'conversation_id': conversation.id, 'answer': full_answer, 'sources': final_sources})}\n\n"
+            except Exception:
+                yield f"data: {_json.dumps({'done': True, 'answer': full_answer, 'sources': final_sources})}\n\n"
+
+        return StreamingHttpResponse(event_stream(), content_type='text/event-stream')
 
 """ LIST CONVERSATIONS """
 class ChatHistoryView(APIView):

@@ -11,7 +11,7 @@ from django.http import StreamingHttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from api.retriever import build_index, search, rerank, get_embedding_model, remove_overlapping_chunks
+from api.retriever import build_index, search, rerank, get_embedding_model, remove_overlapping_chunks, build_bm25_index, hybrid_search
 from api.generator import generate_answer, generate_answer_stream, test_provider_connection, ProviderAPIError
 from api.chunker import semantic_chunk
 from api.compressor import compress_chunks
@@ -66,6 +66,8 @@ docs = []
 chunk_sources = []
 index = None
 embeddings = None
+bm25_index = None
+bm25_tokenized = []
 _documents_loaded = False
 
 
@@ -457,7 +459,7 @@ def _extract_markdown_from_html(html_text):
 
 
 def load_documents(user, progress_callback=None, is_cancelled=None):
-    global docs, chunk_sources, index, embeddings, _documents_loaded
+    global docs, chunk_sources, index, embeddings, bm25_index, bm25_tokenized, _documents_loaded
     docs.clear()
     chunk_sources.clear()
 
@@ -501,11 +503,15 @@ def load_documents(user, progress_callback=None, is_cancelled=None):
         index, embeddings = build_index(docs)
     except Exception:
         index, embeddings = None, None
+    try:
+        bm25_index, bm25_tokenized = build_bm25_index(docs)
+    except Exception:
+        bm25_index, bm25_tokenized = None, []
     _documents_loaded = True
 
 
 def ensure_documents_loaded(user, force=False):
-    global _current_user_id
+    global _current_user_id, bm25_index, bm25_tokenized
     if force or not _documents_loaded or _current_user_id != user.id:
         load_documents(user)
         _current_user_id = user.id
@@ -786,7 +792,7 @@ class AskView(APIView):
                 {"error": "No indexed documents found. Upload documents and run ingestion first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = search(question, docs, index, embeddings, top_k=10)
+        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=10)
         sources = [chunk_sources[i] for i in top_indices]
 
         # Rerank to top-3 for higher precision.
@@ -1056,10 +1062,12 @@ class DeleteAccountView(APIView):
         if os.path.isdir(user_dir):
             shutil.rmtree(user_dir, ignore_errors=True)
         # Reset in-memory index if currently loaded for this user.
-        global _current_user_id, _documents_loaded
+        global _current_user_id, _documents_loaded, bm25_index, bm25_tokenized
         if _current_user_id == user.id:
             docs.clear()
             chunk_sources.clear()
+            bm25_index = None
+            bm25_tokenized = []
             _current_user_id = None
             _documents_loaded = False
         user.delete()
@@ -1161,7 +1169,7 @@ class SearchView(APIView):
                 {'error': 'top_k must be an integer.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = search(query, docs, index, embeddings, top_k=top_k)
+        top_chunks, top_indices = hybrid_search(query, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=top_k)
         sources = [chunk_sources[i] for i in top_indices]
         results = []
         for i, chunk in enumerate(top_chunks):
@@ -1249,7 +1257,7 @@ class ChatView(APIView):
             for m in past_messages
         ]
 
-        top_chunks, top_indices = search(question, docs, index, embeddings, top_k=3)
+        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=3)
         sources = list(dict.fromkeys([chunk_sources[i] for i in top_indices]))
         try:
             profile, _ = UserProfile.objects.get_or_create(user=request.user)
@@ -1344,7 +1352,7 @@ class ChatStreamView(APIView):
             for m in past_messages
         ]
 
-        top_chunks, top_indices = search(question, docs, index, embeddings, top_k=10)
+        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=10)
         sources = [chunk_sources[i] for i in top_indices]
 
         reranked = rerank(question, top_chunks, top_k=3)
@@ -1678,7 +1686,7 @@ class SearchRerankView(APIView):
                 {'error': 'initial_k and final_k must be integers.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = search(query, docs, index, embeddings, top_k=initial_k)
+        top_chunks, top_indices = hybrid_search(query, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=initial_k)
         reranked = rerank(query, top_chunks, top_k=final_k)
         results = []
         for item in reranked:
@@ -2047,7 +2055,7 @@ class RunEvaluationView(APIView):
             results = []
             for item in items:
                 try:
-                    top_chunks, top_indices = search(item.question, docs, index, embeddings, top_k=3)
+                    top_chunks, top_indices = hybrid_search(item.question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=3)
                     actual_answer = generate_answer(item.question, top_chunks, provider=profile.llm_provider, model=profile.llm_model, api_key=profile.llm_api_key)
                     test_case = LLMTestCase(input=item.question, actual_output=actual_answer, retrieval_context=top_chunks, expected_output=item.expected_answer)
                     

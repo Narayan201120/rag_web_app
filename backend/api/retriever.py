@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer, CrossEncoder
 import faiss
 import numpy as np
+from rank_bm25 import BM25Okapi
 
 _model = None
 _reranker = None
@@ -114,3 +115,30 @@ def remove_overlapping_chunks(chunks, sources, overlap_threshold=0.6):
             kept_sources.append(sources[i])
 
     return kept_chunks, kept_sources
+
+
+def build_bm25_index(docs):
+    tokenized_corpus = [doc.lower().split() for doc in docs]
+    return BM25Okapi(tokenized_corpus), tokenized_corpus
+
+
+def hybrid_search(query, docs, dense_index, bm25_index, tokenized_corpus, embeddings, top_k=10):
+    if not docs:
+        return [], []
+
+    dense_chunks, dense_indices = search(query, docs, dense_index, embeddings, top_k=top_k)
+
+    tokenized_query = query.lower().split()
+    bm25_scores = bm25_index.get_scores(tokenized_query)
+    bm25_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[:top_k]
+
+    K = 60
+    doc_scores = {}
+    for rank, idx in enumerate(dense_indices):
+        doc_scores[idx] = doc_scores.get(idx, 0) + 1 / (K + rank + 1)
+    for rank, idx in enumerate(bm25_indices):
+        doc_scores[idx] = doc_scores.get(idx, 0) + 1 / (K + rank + 1)
+
+    fused_indices = sorted(doc_scores.keys(), key=lambda i: doc_scores[i], reverse=True)[:top_k]
+    fused_chunks = [docs[i] for i in fused_indices]
+    return fused_chunks, fused_indices

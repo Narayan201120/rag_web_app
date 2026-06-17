@@ -303,7 +303,7 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
         self.assertIsNotNone(auth_user)
 
     @patch("api.views.ensure_documents_loaded")
-    @patch("api.views.search")
+    @patch("api.views.hybrid_search")
     def test_search_returns_results(self, mock_search, _mock_loaded):
         mock_search.return_value = (["retrieved chunk"], [0])
         api_views.chunk_sources = ["doc_a.txt"]

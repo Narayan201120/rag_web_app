@@ -149,6 +149,169 @@
         color: var(--primary);
     }
 
+    .conv-item-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        border-radius: 0.375rem;
+        transition: all 0.2s ease;
+    }
+
+    .conv-item-wrapper:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .conv-item-wrapper.active {
+        background: var(--surface-container-high);
+    }
+
+    .conv-item-wrapper .conv-item {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem 0.5rem 0.5rem 1rem;
+        border-radius: 0.375rem;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--on-surface-variant);
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.8125rem;
+        transition: all 0.2s ease;
+        text-align: left;
+    }
+
+    .conv-item-wrapper.active .conv-item {
+        color: var(--primary);
+    }
+
+    .conv-item-wrapper .conv-item:hover {
+        color: var(--on-surface);
+    }
+
+    .conv-actions {
+        display: none;
+        align-items: center;
+        gap: 0.125rem;
+        padding-right: 0.25rem;
+    }
+
+    .conv-item-wrapper:hover .conv-actions {
+        display: flex;
+    }
+
+    .conv-action-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 0.125rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.25rem;
+        color: var(--outline);
+        transition: color 0.15s;
+    }
+
+    .conv-action-btn:hover {
+        color: var(--on-surface);
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .conv-action-icon {
+        font-size: 0.875rem !important;
+    }
+
+    .conv-dropdown {
+        position: absolute;
+        right: 0;
+        top: 100%;
+        z-index: 50;
+        min-width: 10rem;
+        background: #2a2a2a;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0.5rem;
+        padding: 0.25rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .conv-dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--on-surface);
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.8125rem;
+        border-radius: 0.25rem;
+        text-align: left;
+        transition: background 0.15s;
+    }
+
+    .conv-dropdown-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .conv-dropdown-danger {
+        color: #ef4444;
+    }
+
+    .conv-dropdown-danger:hover {
+        background: rgba(239, 68, 68, 0.12);
+    }
+
+    .conv-delete-confirm {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
+        color: var(--on-surface);
+    }
+
+    .conv-delete-yes, .conv-delete-no {
+        background: transparent;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        cursor: pointer;
+        padding: 0.125rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--on-surface);
+        font-family: 'Manrope', sans-serif;
+    }
+
+    .conv-delete-yes {
+        border-color: #ef4444;
+        color: #ef4444;
+    }
+
+    .conv-delete-yes:hover {
+        background: rgba(239, 68, 68, 0.15);
+    }
+
+    .conv-delete-no:hover {
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .conv-rename-input {
+        flex: 1;
+        min-width: 0;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--primary);
+        border-radius: 0.25rem;
+        color: var(--on-surface);
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.8125rem;
+        padding: 0.125rem 0.375rem;
+        outline: none;
+    }
+
     .conv-title {
         white-space: nowrap;
         overflow: hidden;

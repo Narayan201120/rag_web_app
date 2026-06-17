@@ -1431,13 +1431,14 @@ class ChatHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        conversations = Conversation.objects.filter(user=request.user)
+        conversations = Conversation.objects.filter(user=request.user).order_by('-pinned', '-updated_at')
         result = []
         for conv in conversations:
             last_msg = conv.messages.order_by('-created_at').first()
             result.append({
                 'id': conv.id,
                 'title': conv.title,
+                'pinned': conv.pinned,
                 'created_at': conv.created_at,
                 'updated_at': conv.updated_at,
                 'message_count': conv.messages.count(),
@@ -1461,6 +1462,7 @@ class ConversationDetailView(APIView):
         return Response({
             'id': conv.id,
             'title': conv.title,
+            'pinned': conv.pinned,
             'messages': [{
                 'id': m.id,
                 'question': m.question,
@@ -1469,6 +1471,32 @@ class ConversationDetailView(APIView):
                 'created_at': m.created_at,
             } for m in messages],
         }, status=status.HTTP_200_OK)
+
+    def patch(self, request, conversation_id):
+        try:
+            conv = Conversation.objects.get(id=conversation_id, user=request.user)
+        except Conversation.DoesNotExist:
+            return Response({'error': 'Conversation not found.'}, status=status.HTTP_404_NOT_FOUND)
+        title = request.data.get('title')
+        pinned = request.data.get('pinned')
+        if title is not None:
+            conv.title = title.strip() or conv.title
+        if pinned is not None:
+            conv.pinned = bool(pinned)
+        conv.save()
+        return Response({
+            'id': conv.id,
+            'title': conv.title,
+            'pinned': conv.pinned,
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request, conversation_id):
+        try:
+            conv = Conversation.objects.get(id=conversation_id, user=request.user)
+        except Conversation.DoesNotExist:
+            return Response({'error': 'Conversation not found.'}, status=status.HTTP_404_NOT_FOUND)
+        conv.delete()
+        return Response({'message': 'Conversation deleted.'}, status=status.HTTP_200_OK)
 
 """ INGEST VIEW """
 class IngestView(APIView):

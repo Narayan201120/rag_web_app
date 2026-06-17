@@ -162,7 +162,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                     setMessages((prev) => [...prev, newMsg]);
                     setStreamingAnswer(null);
                     if (event.conversation_id) {
-                        onLoadConversation(event.conversation_id, false);
+                        onLoadConversation(event.conversation_id);
                     }
                 }
             }

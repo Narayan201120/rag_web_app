@@ -172,13 +172,11 @@ function App() {
             return;
         }
         setExpandedColId(colId);
-        if (!collectionDocs[colId]) {
-            try {
-                const res = await requestWithRefresh((headers) => apiClient.get(`/collections/${colId}/`, { headers }));
-                setCollectionDocs(prev => ({ ...prev, [colId]: res.data.documents }));
-            } catch (err) {
-                console.error('Failed to fetch collection docs:', err);
-            }
+        try {
+            const res = await requestWithRefresh((headers) => apiClient.get(`/collections/${colId}/`, { headers }));
+            setCollectionDocs(prev => ({ ...prev, [colId]: res.data.documents }));
+        } catch (err) {
+            console.error('Failed to fetch collection docs:', err);
         }
     };
 
@@ -386,12 +384,12 @@ function App() {
                                             <span className="projects-doc-count">{col.document_count}</span>
                                         </button>
                                         {expandedColId === col.id && (
-                                            <div className="projects-col-docs">
+                                            <div className="projects-col-docs" ref={sidebarMenuRef}>
                                                 {collectionDocs[col.id]?.length > 0 ? (
                                                     collectionDocs[col.id].map((doc) => (
-                                                        <div key={doc.name} className="projects-doc-item">
+                                                        <div key={doc.name} className={`projects-doc-item${sidebarDocMenu?.docName === doc.name && sidebarDocMenu?.colId === col.id ? ' menu-open' : ''}`}>
                                                             <span className="projects-doc-name">{doc.name}</span>
-                                                            <div className="projects-doc-actions" ref={sidebarMenuRef}>
+                                                            <div className="projects-doc-actions">
                                                                 <button
                                                                     className="conv-action-btn"
                                                                     onClick={(e) => {

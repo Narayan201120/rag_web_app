@@ -1445,6 +1445,10 @@
         display: flex;
     }
 
+    .projects-doc-item.menu-open .projects-doc-actions {
+        display: flex;
+    }
+
     .projects-doc-dropdown {
         right: 0;
         left: auto;

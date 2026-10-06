@@ -20,8 +20,17 @@ function App() {
     const [renamingConvId, setRenamingConvId] = useState(null);
     const [renamingTitle, setRenamingTitle] = useState('');
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+    const [collections, setCollections] = useState([]);
+    const [projectsOpen, setProjectsOpen] = useState(true);
+    const [creatingCollection, setCreatingCollection] = useState(false);
+    const [newCollectionName, setNewCollectionName] = useState('');
+    const [expandedColId, setExpandedColId] = useState(null);
+    const [collectionDocs, setCollectionDocs] = useState({});
+    const [sidebarDocMenu, setSidebarDocMenu] = useState(null);
+    const collectionInputRef = useRef(null);
     const menuRef = useRef(null);
     const renameInputRef = useRef(null);
+    const sidebarMenuRef = useRef(null);
 
     const loadConversations = useCallback(async () => {
         try {
@@ -32,11 +41,21 @@ function App() {
         }
     }, []);
 
+    const fetchCollections = useCallback(async () => {
+        try {
+            const res = await requestWithRefresh((headers) => apiClient.get('/collections/', { headers }));
+            setCollections(res.data.collections || []);
+        } catch {
+            setCollections([]);
+        }
+    }, []);
+
     useEffect(() => {
         if (loggedIn) {
             loadConversations();
+            fetchCollections();
         }
-    }, [loggedIn, loadConversations]);
+    }, [loggedIn, loadConversations, fetchCollections]);
 
     useEffect(() => {
         if (renamingConvId) {
@@ -46,9 +65,18 @@ function App() {
     }, [renamingConvId]);
 
     useEffect(() => {
+        if (creatingCollection) {
+            collectionInputRef.current?.focus();
+        }
+    }, [creatingCollection]);
+
+    useEffect(() => {
         const handleClickOutside = (e) => {
             if (menuRef.current && !menuRef.current.contains(e.target)) {
                 setMenuOpenConvId(null);
+            }
+            if (sidebarMenuRef.current && !sidebarMenuRef.current.contains(e.target)) {
+                setSidebarDocMenu(null);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -58,6 +86,7 @@ function App() {
     const handleNavClick = (newPage) => {
         setPage(newPage);
         setMobileMenuOpen(false);
+        if (newPage === 'documents') fetchCollections();
     };
 
     const handleLogout = async () => {
@@ -122,6 +151,63 @@ function App() {
         }
         setDeleteConfirmId(null);
         setMenuOpenConvId(null);
+    };
+
+    const handleCreateCollection = async () => {
+        const name = newCollectionName.trim();
+        if (!name) return;
+        try {
+            await requestWithRefresh((headers) => apiClient.post('/collections/', { name }, { headers }));
+            setNewCollectionName('');
+            setCreatingCollection(false);
+            fetchCollections();
+        } catch (err) {
+            console.error('Create collection failed:', err);
+        }
+    };
+
+    const handleToggleCollection = async (colId) => {
+        if (expandedColId === colId) {
+            setExpandedColId(null);
+            return;
+        }
+        setExpandedColId(colId);
+        if (!collectionDocs[colId]) {
+            try {
+                const res = await requestWithRefresh((headers) => apiClient.get(`/collections/${colId}/`, { headers }));
+                setCollectionDocs(prev => ({ ...prev, [colId]: res.data.documents }));
+            } catch (err) {
+                console.error('Failed to fetch collection docs:', err);
+            }
+        }
+    };
+
+    const handleSidebarDocMove = async (docName, fromColId, toColId) => {
+        try {
+            await requestWithRefresh((headers) => apiClient.put(`/documents/${encodeURIComponent(docName)}/move/`, { collection_id: toColId }, { headers }));
+            fetchCollections();
+            const res = await requestWithRefresh((headers) => apiClient.get(`/collections/${fromColId}/`, { headers }));
+            setCollectionDocs(prev => ({ ...prev, [fromColId]: res.data.documents }));
+            if (toColId) {
+                const res2 = await requestWithRefresh((headers) => apiClient.get(`/collections/${toColId}/`, { headers }));
+                setCollectionDocs(prev => ({ ...prev, [toColId]: res2.data.documents }));
+            }
+        } catch (err) {
+            console.error('Move failed:', err);
+        }
+        setSidebarDocMenu(null);
+    };
+
+    const handleSidebarDocRemove = async (docName, colId) => {
+        try {
+            await requestWithRefresh((headers) => apiClient.put(`/documents/${encodeURIComponent(docName)}/move/`, { collection_id: null }, { headers }));
+            fetchCollections();
+            const res = await requestWithRefresh((headers) => apiClient.get(`/collections/${colId}/`, { headers }));
+            setCollectionDocs(prev => ({ ...prev, [colId]: res.data.documents }));
+        } catch (err) {
+            console.error('Remove failed:', err);
+        }
+        setSidebarDocMenu(null);
     };
 
     if (!loggedIn) {
@@ -248,6 +334,117 @@ function App() {
                             )}
                         </div>
                     </div>
+
+                    <div className="projects-section">
+                        <div className="projects-header">
+                            <button className="projects-toggle" onClick={() => setProjectsOpen(!projectsOpen)}>
+                                <span className="material-symbols-outlined projects-arrow" style={{ fontSize: '1rem' }}>
+                                    {projectsOpen ? 'expand_more' : 'chevron_right'}
+                                </span>
+                                <span className="sidebar-section-title projects-title">Projects</span>
+                            </button>
+                            <button
+                                className="projects-add-btn"
+                                onClick={() => setCreatingCollection(true)}
+                                title="New collection"
+                            >
+                                <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>add</span>
+                            </button>
+                        </div>
+                        {projectsOpen && (
+                            <div className="projects-list">
+                                {creatingCollection && (
+                                    <div className="conv-item-wrapper">
+                                        <div className="conv-item" style={{ padding: '0.25rem 0.5rem 0.25rem 2.5rem' }}>
+                                            <input
+                                                ref={collectionInputRef}
+                                                className="conv-rename-input"
+                                                placeholder="Collection name"
+                                                value={newCollectionName}
+                                                onChange={(e) => setNewCollectionName(e.target.value)}
+                                                onBlur={() => { if (!newCollectionName.trim()) setCreatingCollection(false); }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') handleCreateCollection();
+                                                    if (e.key === 'Escape') { setCreatingCollection(false); setNewCollectionName(''); }
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                {collections.map((col) => (
+                                    <div key={col.id} className="projects-col-wrapper">
+                                        <button
+                                            className="conv-item projects-item"
+                                            onClick={() => handleToggleCollection(col.id)}
+                                        >
+                                            <span className="material-symbols-outlined projects-arrow-col" style={{ fontSize: '1rem' }}>
+                                                {expandedColId === col.id ? 'expand_more' : 'chevron_right'}
+                                            </span>
+                                            <span className="material-symbols-outlined" style={{ fontSize: '1rem', color: 'var(--primary)' }}>folder</span>
+                                            <span className="conv-title">{col.name}</span>
+                                            <span className="projects-doc-count">{col.document_count}</span>
+                                        </button>
+                                        {expandedColId === col.id && (
+                                            <div className="projects-col-docs">
+                                                {collectionDocs[col.id]?.length > 0 ? (
+                                                    collectionDocs[col.id].map((doc) => (
+                                                        <div key={doc.name} className="projects-doc-item">
+                                                            <span className="projects-doc-name">{doc.name}</span>
+                                                            <div className="projects-doc-actions" ref={sidebarMenuRef}>
+                                                                <button
+                                                                    className="conv-action-btn"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setSidebarDocMenu(sidebarDocMenu?.docName === doc.name && sidebarDocMenu?.colId === col.id ? null : { colId: col.id, docName: doc.name });
+                                                                    }}
+                                                                >
+                                                                    <span className="material-symbols-outlined" style={{ fontSize: '0.875rem' }}>more_horiz</span>
+                                                                </button>
+                                                                {sidebarDocMenu?.docName === doc.name && sidebarDocMenu?.colId === col.id && (
+                                                                    <div className="conv-dropdown projects-doc-dropdown" onClick={(e) => e.stopPropagation()}>
+                                                                        <div className="conv-dropdown-item" style={{ fontSize: '0.75rem', color: 'var(--outline)', cursor: 'default' }}>
+                                                                            Move to...
+                                                                        </div>
+                                                                        {collections.filter(c => c.id !== col.id).map(c => (
+                                                                            <button
+                                                                                key={c.id}
+                                                                                className="conv-dropdown-item"
+                                                                                onClick={() => handleSidebarDocMove(doc.name, col.id, c.id)}
+                                                                            >
+                                                                                <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>folder</span>
+                                                                                {c.name}
+                                                                            </button>
+                                                                        ))}
+                                                                        <button
+                                                                            className="conv-dropdown-item conv-dropdown-danger"
+                                                                            onClick={() => handleSidebarDocRemove(doc.name, col.id)}
+                                                                        >
+                                                                            <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>remove_circle</span>
+                                                                            Remove from collection
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <div className="projects-empty" style={{ paddingLeft: '2.5rem' }}>
+                                                        No documents in this collection
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                                {collections.length === 0 && !creatingCollection && (
+                                    <div className="projects-empty">
+                                        No collections yet
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="sidebar-footer">
@@ -275,7 +472,7 @@ function App() {
                         onRefreshConversations={loadConversations}
                     />
                 )}
-                {page === 'documents' && <Documents />}
+                {page === 'documents' && <Documents onCollectionsChange={fetchCollections} />}
                 {page === 'search' && <Search />}
                 {page === 'settings' && <Settings onLogout={handleLogout} />}
             </main>

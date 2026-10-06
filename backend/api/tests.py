@@ -642,6 +642,95 @@ class IngestAndCollectionEndpointSmokeTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def _write_user_file(self, filename, content=b"hello rename"):
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        os.makedirs(user_dir, exist_ok=True)
+        path = os.path.join(user_dir, filename)
+        with open(path, "wb") as f:
+            f.write(content)
+        return user_dir, path
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_rename_rejects_path_traversal(self, mock_ensure):
+        self._write_user_file("sample.txt")
+
+        response = self.api_client.patch(
+            "/api/documents/sample.txt/rename/",
+            {"new_name": "../evil.md"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        self.assertTrue(os.path.isfile(os.path.join(user_dir, "sample.txt")))
+        self.assertFalse(os.path.isfile(os.path.join(api_views.DOC_DIR, "evil.md")))
+        self.assertFalse(Document.objects.filter(filename="../evil.md").exists())
+        mock_ensure.assert_not_called()
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_rename_rejects_backslash_traversal(self, mock_ensure):
+        self._write_user_file("sample.txt")
+
+        response = self.api_client.patch(
+            "/api/documents/sample.txt/rename/",
+            {"new_name": "..\\evil.md"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        self.assertTrue(os.path.isfile(os.path.join(user_dir, "sample.txt")))
+        mock_ensure.assert_not_called()
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_rename_rejects_absolute_path(self, mock_ensure):
+        self._write_user_file("sample.txt")
+        abs_name = os.path.join(os.path.abspath(api_views.DOC_DIR), "evil_abs.md")
+
+        response = self.api_client.patch(
+            "/api/documents/sample.txt/rename/",
+            {"new_name": abs_name},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        self.assertTrue(os.path.isfile(os.path.join(user_dir, "sample.txt")))
+        mock_ensure.assert_not_called()
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_rename_rejects_subdirectory(self, mock_ensure):
+        self._write_user_file("sample.txt")
+
+        response = self.api_client.patch(
+            "/api/documents/sample.txt/rename/",
+            {"new_name": "sub/evil.md"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        self.assertTrue(os.path.isfile(os.path.join(user_dir, "sample.txt")))
+        mock_ensure.assert_not_called()
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_rename_happy_path(self, mock_ensure):
+        self._write_user_file("sample.txt")
+        Document.objects.create(user=self.user, filename="sample.txt")
+
+        response = self.api_client.patch(
+            "/api/documents/sample.txt/rename/",
+            {"new_name": "renamed.md"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        self.assertFalse(os.path.exists(os.path.join(user_dir, "sample.txt")))
+        self.assertTrue(os.path.isfile(os.path.join(user_dir, "renamed.md")))
+        self.assertTrue(Document.objects.filter(user=self.user, filename="renamed.md").exists())
+        mock_ensure.assert_called_once()
+
 
 class URLParsingHelperTests(TestCase):
     def test_fix_common_mojibake_repairs_utf8_text(self):

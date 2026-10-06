@@ -1031,31 +1031,7 @@
         color: var(--on-surface);
     }
 
-    .doc-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 1rem;
-        background-color: var(--surface-container-high);
-        border-radius: 0.5rem;
-        margin-bottom: 0.5rem;
-        font-family: 'Manrope', sans-serif;
-    }
 
-    .doc-actions button {
-        background: transparent;
-        color: var(--primary);
-        border: 1px solid var(--primary);
-        padding: 0.25rem 0.75rem;
-        border-radius: 0.25rem;
-        cursor: pointer;
-        margin-left: 0.5rem;
-    }
-
-    .doc-actions button.delete-btn {
-        color: var(--error);
-        border-color: var(--error);
-    }
 
     /* Modals/Overlays */
     .doc-preview-overlay {
@@ -1330,3 +1306,342 @@
         from { transform: translateX(-100%); }
         to { transform: translateX(0); }
     }
+
+    .projects-section {
+        margin-top: 1.5rem;
+    }
+
+    .projects-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-right: 0.5rem;
+    }
+
+    .projects-header:hover .projects-add-btn {
+        opacity: 1;
+    }
+
+    .projects-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+        flex: 1;
+        text-align: left;
+    }
+
+    .projects-arrow {
+        color: var(--outline);
+        transition: transform 0.2s;
+    }
+
+    .projects-title {
+        margin: 0;
+    }
+
+    .projects-add-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--outline);
+        padding: 0.125rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.25rem;
+        opacity: 0;
+        transition: opacity 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .projects-add-btn:hover {
+        color: var(--on-surface);
+        background: rgba(255, 255, 255, 0.08);
+    }
+
+    .projects-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        margin-top: 0.25rem;
+    }
+
+    .projects-item {
+        gap: 0.5rem;
+    }
+
+    .projects-doc-count {
+        margin-left: auto;
+        font-size: 0.6875rem;
+        color: var(--outline);
+        background: var(--surface-container);
+        padding: 0.0625rem 0.375rem;
+        border-radius: 9999px;
+        min-width: 1.25rem;
+        text-align: center;
+    }
+
+    .projects-empty {
+        padding-left: 2.5rem;
+        font-size: 0.75rem;
+        color: var(--outline);
+        font-family: 'Manrope', sans-serif;
+        margin-top: 0.25rem;
+    }
+
+    .projects-col-wrapper {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .projects-arrow-col {
+        color: var(--outline);
+        transition: transform 0.2s;
+        margin-right: -0.25rem;
+    }
+
+    .projects-col-docs {
+        display: flex;
+        flex-direction: column;
+        margin-left: 1.5rem;
+        border-left: 1px solid var(--outline-variant);
+        padding-left: 0.5rem;
+    }
+
+    .projects-doc-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--on-surface-variant);
+        font-family: 'Manrope', sans-serif;
+        position: relative;
+    }
+
+    .projects-doc-item:hover {
+        background: rgba(255, 255, 255, 0.04);
+    }
+
+    .projects-doc-name {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
+
+    .projects-doc-actions {
+        display: none;
+        align-items: center;
+        flex-shrink: 0;
+    }
+
+    .projects-doc-item:hover .projects-doc-actions {
+        display: flex;
+    }
+
+    .projects-doc-dropdown {
+        right: 0;
+        left: auto;
+        min-width: 10rem;
+    }
+
+    .doc-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .doc-icon {
+        font-size: 1.25rem;
+        flex-shrink: 0;
+        line-height: 1;
+    }
+
+    .doc-name-col {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        min-width: 0;
+    }
+
+    .doc-name {
+        font-size: 0.875rem;
+        color: var(--on-surface);
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        border-bottom: 1px dotted transparent;
+        transition: border-color 0.15s;
+    }
+
+    .doc-name:hover {
+        border-bottom-color: var(--outline);
+    }
+
+    .doc-size {
+        font-size: 0.6875rem;
+        color: var(--outline);
+    }
+
+    .doc-rename-input {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--primary);
+        border-radius: 0.25rem;
+        color: var(--on-surface);
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.875rem;
+        padding: 0.125rem 0.375rem;
+        outline: none;
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .doc-collection-select {
+        background: var(--surface-container-high);
+        border: 1px solid var(--outline-variant);
+        color: var(--on-surface-variant);
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.75rem;
+        cursor: pointer;
+        outline: none;
+        margin-left: 0.5rem;
+    }
+
+    .doc-collection-select:hover {
+        border-color: var(--primary);
+    }
+
+    .doc-collection-select option {
+        background: var(--surface-container-low);
+        color: var(--on-surface);
+    }
+
+    .doc-confirm-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .doc-confirm-modal {
+        background: var(--surface-container-low);
+        border: 1px solid var(--outline-variant);
+        border-radius: 0.75rem;
+        padding: 2rem;
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+    }
+
+    .doc-confirm-modal p {
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.9375rem;
+        color: var(--on-surface);
+        margin-bottom: 0.5rem;
+    }
+
+    .doc-confirm-sub {
+        font-size: 0.8125rem !important;
+        color: var(--on-surface-variant) !important;
+        margin-bottom: 1.5rem !important;
+    }
+
+    .doc-confirm-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+    }
+
+    .doc-confirm-actions .cancel-btn {
+        background: transparent;
+        border: 1px solid var(--outline-variant);
+        color: var(--on-surface);
+        padding: 0.5rem 1.25rem;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.8125rem;
+        transition: background 0.15s;
+    }
+
+    .doc-confirm-actions .cancel-btn:hover {
+        background: var(--surface-container);
+    }
+
+    .doc-confirm-actions .delete-btn {
+        background: var(--error);
+        color: #fff;
+        border: none;
+        padding: 0.5rem 1.25rem;
+        border-radius: 0.375rem;
+        cursor: pointer;
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        transition: transform 0.15s;
+    }
+
+    .doc-confirm-actions .delete-btn:hover {
+        transform: scale(0.96);
+    }
+
+    .doc-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background-color: var(--surface-container-high);
+        border-radius: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-family: 'Manrope', sans-serif;
+        gap: 1rem;
+    }
+
+    .doc-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        flex-shrink: 0;
+    }
+
+    .doc-actions button {
+        background: transparent;
+        color: var(--primary);
+        border: 1px solid var(--primary);
+        padding: 0.25rem 0.75rem;
+        border-radius: 0.25rem;
+        cursor: pointer;
+        font-family: 'Manrope', sans-serif;
+        font-size: 0.75rem;
+        transition: all 0.15s;
+    }
+
+    .doc-actions button:hover {
+        background: rgba(255, 180, 172, 0.1);
+    }
+
+    .doc-actions button.delete-btn {
+        color: var(--error);
+        border-color: var(--error);
+    }
+
+    .doc-actions button.delete-btn:hover {
+        background: rgba(255, 180, 171, 0.12);
+    }
+
+

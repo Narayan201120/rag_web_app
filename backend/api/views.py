@@ -1663,6 +1663,35 @@ class CollectionsView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 
+""" COLLECTION DETAIL VIEW """
+class CollectionDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, collection_id):
+        try:
+            collection = Collection.objects.get(id=collection_id, user=request.user)
+        except Collection.DoesNotExist:
+            return Response({'error': 'Collection not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        user_dir = _user_doc_dir(request.user)
+        doc_list = []
+        for doc in collection.documents.all():
+            filepath = os.path.join(user_dir, doc.filename)
+            size_bytes = os.path.getsize(filepath) if os.path.isfile(filepath) else 0
+            doc_list.append({
+                'name': doc.filename,
+                'size_bytes': size_bytes,
+            })
+
+        return Response({
+            'id': collection.id,
+            'name': collection.name,
+            'description': collection.description,
+            'created_at': collection.created_at,
+            'documents': doc_list,
+        }, status=status.HTTP_200_OK)
+
+
 """ MOVE DOCUMENT TO COLLECTION VIEW """
 class MoveDocumentView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1691,6 +1720,66 @@ class MoveDocumentView(APIView):
             'filename': doc.filename,
             'collection': doc.collection.name if doc.collection else None,
         }, status=status.HTTP_200_OK)
+
+""" RENAME DOCUMENT VIEW """
+class RenameDocumentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, filename):
+        new_raw = request.data.get('new_name', '').strip()
+        if not new_raw:
+            return Response({'error': 'new_name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if '\x00' in new_raw or '/' in new_raw or '\\' in new_raw:
+            return Response(
+                {'error': 'Invalid file name. Use a plain file name without path components.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        safe_new = Path(new_raw).name
+        if not safe_new or safe_new != new_raw:
+            return Response(
+                {'error': 'Invalid file name. Use a plain file name without path components.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ext = Path(safe_new).suffix.lower()
+        if not ext or ext not in SUPPORTED_EXTENSIONS:
+            return Response(
+                {'error': f'Unsupported extension. Supported: {", ".join(SUPPORTED_EXTENSIONS)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        safe_name, filepath = _resolve_document_path(request.user, filename)
+        if not filepath:
+            return Response(
+                {'error': f'Document {safe_name or filename} not found!'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        user_dir = _user_doc_dir(request.user)
+        new_path = os.path.join(user_dir, safe_new)
+        if os.path.abspath(new_path) != os.path.join(os.path.abspath(user_dir), safe_new):
+            return Response(
+                {'error': 'Invalid file name. Use a plain file name without path components.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if os.path.isfile(new_path):
+            return Response(
+                {'error': f'A document named "{safe_new}" already exists.'},
+                status=status.HTTP_409_CONFLICT
+            )
+
+        os.rename(filepath, new_path)
+
+        Document.objects.filter(user=request.user, filename=safe_name).update(filename=safe_new)
+
+        ensure_documents_loaded(request.user, force=True)
+        return Response({
+            'message': f'"{safe_name}" renamed to "{safe_new}".',
+            'old_name': safe_name,
+            'new_name': safe_new,
+        }, status=status.HTTP_200_OK)
+
 
 """ SEARCH RERANK VIEW """
 class SearchRerankView(APIView):

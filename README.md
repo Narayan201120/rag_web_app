@@ -27,7 +27,7 @@ A full-stack Retrieval-Augmented Generation (RAG) application that lets you uplo
 | Vector search | FAISS + `sentence-transformers` |
 | Reranking | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | LLM routing | OpenAI-compatible SDK + Google GenAI SDK |
-| Web scraping | BeautifulSoup4, Trafilatura |
+| Web scraping | BeautifulSoup4 (Trafilatura pinned in requirements, migration pending) |
 | Database | PostgreSQL (SQLite fallback for dev) |
 | Frontend | React (Create React App) |
 | Math rendering | KaTeX |
@@ -161,13 +161,17 @@ dashboard: `DATABASE_URL`, `DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`,
 | GET | `/api/documents/` | List user documents |
 | GET/DELETE | `/api/documents/<filename>/` | Preview or delete a document |
 | PUT | `/api/documents/<filename>/move/` | Move a document to a collection |
+| PATCH | `/api/documents/<filename>/rename/` | Rename a document |
 | GET/POST | `/api/collections/` | List or create document collections |
+| GET | `/api/collections/<collection_id>/` | Get a collection with its documents |
 | POST | `/api/ingest/` | Trigger indexing |
 | POST | `/api/ask/` | Ask a single RAG question |
 | POST | `/api/chat/` | Ask a question in a persisted conversation |
+| POST | `/api/chat/stream/` | Stream answer tokens over SSE |
 | GET | `/api/chat/history/` | List conversations |
-| GET | `/api/chat/conversations/<conversation_id>/` | Get messages in a conversation |
+| GET/PATCH/DELETE | `/api/chat/conversations/<conversation_id>/` | Get, rename/pin, or delete a conversation |
 | POST | `/api/chat/<chat_id>/feedback/` | Submit answer feedback |
+| GET | `/api/feedback/hard-queries/` | List downvoted queries for review |
 | GET | `/api/chat/<chat_id>/citations/` | Get citations for a chat answer |
 | GET | `/api/chat/<chat_id>/export/` | Export a chat answer |
 | POST | `/api/search/` | Semantic search |

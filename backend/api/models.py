@@ -110,7 +110,7 @@ class UserProfile(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     llm_provider = models.CharField(max_length=32, choices=PROVIDER_CHOICES, default="google-gemini")
-    llm_model = models.CharField(max_length=128, default="gemini-2.5-flash")
+    llm_model = models.CharField(max_length=128, default="gemini-3.8-flash")
     llm_api_key = models.TextField(blank=True, default='')
 
     def __str__(self):

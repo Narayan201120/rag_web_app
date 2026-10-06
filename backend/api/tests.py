@@ -346,22 +346,22 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
 
         invalid_provider_response = self.api_client.post(
             "/api/settings/api-key/",
-            {"provider": "invalid", "model": "gpt-5.4-mini", "api_key": "abc123"},
+            {"provider": "invalid", "model": "gpt-6.1-sol", "api_key": "abc123"},
             format="json",
         )
         invalid_model_response = self.api_client.post(
             "/api/settings/api-key/",
-            {"provider": "openai", "model": "gemini-2.5-flash", "api_key": "abc123"},
+            {"provider": "openai", "model": "gemini-3.8-flash", "api_key": "abc123"},
             format="json",
         )
         missing_key_response = self.api_client.post(
             "/api/settings/api-key/",
-            {"provider": "google-gemini", "model": "gemini-2.5-flash", "api_key": ""},
+            {"provider": "google-gemini", "model": "gemini-3.8-flash", "api_key": ""},
             format="json",
         )
         valid_response = self.api_client.post(
             "/api/settings/api-key/",
-            {"provider": "openai", "model": "gpt-5.4-mini", "api_key": "sk-test-key"},
+            {"provider": "openai", "model": "gpt-6.1-sol", "api_key": "sk-test-key"},
             format="json",
         )
 
@@ -373,7 +373,7 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
         get_response = self.api_client.get("/api/settings/api-key/")
         self.assertEqual(get_response.status_code, 200)
         self.assertEqual(get_response.json().get("provider"), "openai")
-        self.assertEqual(get_response.json().get("model"), "gpt-5.4-mini")
+        self.assertEqual(get_response.json().get("model"), "gpt-6.1-sol")
 
     @patch("api.views.test_provider_connection")
     def test_settings_api_key_test_connection_success(self, mock_test_provider_connection):
@@ -384,7 +384,7 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
             "/api/settings/api-key/test/",
             {
                 "provider": "openai",
-                "model": "gpt-5.4-mini",
+                "model": "gpt-6.1-sol",
                 "api_key": "sk-test-key",
             },
             format="json",
@@ -401,7 +401,7 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
             "/api/settings/api-key/test/",
             {
                 "provider": "openai",
-                "model": "gemini-2.5-flash",
+                "model": "gemini-3.8-flash",
                 "api_key": "sk-test-key",
             },
             format="json",

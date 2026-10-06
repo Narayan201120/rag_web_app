@@ -16,7 +16,7 @@ function Settings({ onLogout }) {
     const [apiKey, setApiKey] = useState('');
     const [apiKeyDisplay, setApiKeyDisplay] = useState('');
     const [provider, setProvider] = useState('google-gemini');
-    const [model, setModel] = useState('gemini-2.5-flash');
+    const [model, setModel] = useState('gemini-3.8-flash');
     const [providerOptions, setProviderOptions] = useState([]);
     const [providerModels, setProviderModels] = useState({});
     const [connectionStatus, setConnectionStatus] = useState('');
@@ -31,7 +31,7 @@ function Settings({ onLogout }) {
             const res = await authenticatedRequest((headers) => apiClient.get('/settings/api-key/', { headers }));
             setApiKeyDisplay(res.data.api_key || '');
             setProvider(res.data.provider || 'google-gemini');
-            setModel(res.data.model || 'gemini-2.5-flash');
+            setModel(res.data.model || 'gemini-3.8-flash');
             setProviderOptions(res.data.supported_providers || []);
             setProviderModels(res.data.provider_models || {});
             setError('');

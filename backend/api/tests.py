@@ -16,6 +16,7 @@ import logging
 
 from api import views as api_views
 from api.models import APIUsageLog, Conversation, ChatMessage, Task, Collection, Document
+from api.throttles import ChatRateThrottle
 
 
 _NO_THROTTLE = {
@@ -59,6 +60,8 @@ class DocumentIsolationTests(TestCase):
             f.write("doc for user a")
         with open(os.path.join(user_b_dir, "b_only.txt"), "w", encoding="utf-8") as f:
             f.write("doc for user b")
+        Document.objects.create(user=self.user_a, filename="a_only.txt")
+        Document.objects.create(user=self.user_b, filename="b_only.txt")
 
     def tearDown(self):
         api_views.DOC_DIR = self.original_doc_dir
@@ -79,6 +82,8 @@ class DocumentIsolationTests(TestCase):
             f.write("plain text")
         with open(os.path.join(user_b_dir, "topic.md"), "w", encoding="utf-8") as f:
             f.write("# markdown")
+        Document.objects.create(user=self.user_b, filename="topic.txt")
+        Document.objects.create(user=self.user_b, filename="topic.md")
 
         self.api_client.force_authenticate(user=self.user_b)
         response = self.api_client.get("/api/documents/")
@@ -622,6 +627,10 @@ class IngestAndCollectionEndpointSmokeTests(TestCase):
 
     def test_move_document_assigns_collection(self):
         collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+        user_dir = os.path.join(api_views.DOC_DIR, str(self.user.id))
+        os.makedirs(user_dir, exist_ok=True)
+        with open(os.path.join(user_dir, "sample.txt"), "w", encoding="utf-8") as f:
+            f.write("movable content")
 
         response = self.api_client.put(
             "/api/documents/sample.txt/move/",
@@ -730,6 +739,90 @@ class IngestAndCollectionEndpointSmokeTests(TestCase):
         self.assertTrue(os.path.isfile(os.path.join(user_dir, "renamed.md")))
         self.assertTrue(Document.objects.filter(user=self.user, filename="renamed.md").exists())
         mock_ensure.assert_called_once()
+
+    @patch("api.views.submit_task")
+    def test_upload_creates_document_row(self, mock_submit_task):
+        uploaded = SimpleUploadedFile("rowtest.txt", b"hello row")
+
+        response = self.api_client.post("/api/upload/", {"document": uploaded}, format="multipart")
+
+        self.assertEqual(response.status_code, 202)
+        self.assertTrue(Document.objects.filter(user=self.user, filename="rowtest.txt").exists())
+        mock_submit_task.assert_called_once()
+
+    def test_move_rejects_missing_file(self):
+        collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+
+        response = self.api_client.put(
+            "/api/documents/ghost.txt/move/",
+            {"collection_id": collection.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Document.objects.filter(user=self.user, filename="ghost.txt").exists())
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_delete_removes_document_row(self, mock_ensure):
+        self._write_user_file("bye.txt")
+        Document.objects.create(user=self.user, filename="bye.txt")
+
+        response = self.api_client.delete("/api/documents/bye.txt/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(os.path.exists(os.path.join(api_views.DOC_DIR, str(self.user.id), "bye.txt")))
+        self.assertFalse(Document.objects.filter(user=self.user, filename="bye.txt").exists())
+
+    def test_documents_list_ignores_unregistered_files(self):
+        self._write_user_file("loose.txt")
+
+        response = self.api_client.get("/api/documents/")
+
+        self.assertEqual(response.status_code, 200)
+        names = [d["name"] for d in response.json().get("documents", [])]
+        self.assertNotIn("loose.txt", names)
+
+    def test_chat_view_has_chat_throttle(self):
+        self.assertIn(ChatRateThrottle, api_views.ChatView.throttle_classes)
+
+    @patch("api.views.generate_answer")
+    @patch("api.views.get_embedding_model")
+    @patch("api.views.compress_chunks")
+    @patch("api.views.remove_overlapping_chunks")
+    @patch("api.views.rerank")
+    @patch("api.views.hybrid_search")
+    @patch("api.views.ensure_documents_loaded")
+    def test_chat_runs_full_pipeline(self, mock_ensure, mock_search, mock_rerank, mock_overlap, mock_compress, mock_get_model, mock_generate):
+        mock_search.return_value = (["c1", "c2"], [0, 1])
+        mock_rerank.return_value = [{"chunk": "c1", "score": 0.9, "index": 0}]
+        mock_overlap.return_value = (["c1"], ["f1.md"])
+        mock_compress.return_value = ["c1"]
+        mock_get_model.return_value = object()
+        mock_generate.return_value = "hi there"
+
+        orig = {}
+        for key in ("docs", "chunk_sources", "embeddings", "bm25_index", "bm25_tokenized", "_documents_loaded", "_current_user_id", "index"):
+            orig[key] = getattr(api_views, key)
+        api_views.docs = ["c1", "c2"]
+        api_views.chunk_sources = ["f1.md", "f2.md"]
+        api_views.embeddings = object()
+        api_views.bm25_index = None
+        api_views.bm25_tokenized = []
+        api_views._documents_loaded = True
+        api_views._current_user_id = self.user.id
+        api_views.index = SimpleNamespace(ntotal=2)
+        try:
+            response = self.api_client.post("/api/chat/", {"question": "what?"}, format="json")
+        finally:
+            for key, val in orig.items():
+                setattr(api_views, key, val)
+
+        self.assertEqual(response.status_code, 200)
+        mock_rerank.assert_called_once()
+        mock_compress.assert_called_once()
+        body = response.json()
+        self.assertEqual(body["answer"], "hi there")
+        self.assertEqual(body["sources"], ["f1.md"])
 
 
 class URLParsingHelperTests(TestCase):

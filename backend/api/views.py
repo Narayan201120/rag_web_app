@@ -565,6 +565,7 @@ def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
         filepath = os.path.join(user_dir, filename)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(transcript_text)
+        Document.objects.get_or_create(user_id=user_id, filename=filename)
         return filename
 
     parsed = urlparse(clean_url)
@@ -632,6 +633,7 @@ def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
             filepath = os.path.join(user_dir, filename)
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(extract)
+            Document.objects.get_or_create(user_id=user_id, filename=filename)
             return filename
 
     response = http_requests.get(
@@ -671,6 +673,7 @@ def _download_url_to_document(user_id, url, update=None, is_cancelled=None):
         with open(filepath, "wb") as f:
             f.write(response.content)
 
+    Document.objects.get_or_create(user_id=user_id, filename=filename)
     return filename
 
 
@@ -940,6 +943,10 @@ class DocumentUploadView(APIView):
         with open(filepath, 'wb') as f:
             for chunk in uploaded_file.chunks():
                 f.write(chunk)
+        Document.objects.get_or_create(
+            user=request.user,
+            filename=uploaded_file.name,
+        )
 
         task = Task.objects.create(
             user=request.user,
@@ -968,16 +975,20 @@ class ListDocumentsView(APIView):
         os.makedirs(user_dir, exist_ok=True)
         extension_priority = {".md": 3, ".docx": 2, ".pdf": 1, ".txt": 0}
         by_stem = {}
-        for filename in os.listdir(user_dir):
-            if filename.lower().endswith(SUPPORTED_EXTENSIONS):
-                stem = Path(filename).stem
-                ext = Path(filename).suffix.lower()
-                prev = by_stem.get(stem)
-                if prev:
-                    prev_ext = Path(prev).suffix.lower()
-                    if extension_priority.get(ext, -1) <= extension_priority.get(prev_ext, -1):
-                        continue
-                by_stem[stem] = filename
+        for row in Document.objects.filter(user=request.user):
+            filename = row.filename
+            if not filename.lower().endswith(SUPPORTED_EXTENSIONS):
+                continue
+            if not os.path.isfile(os.path.join(user_dir, filename)):
+                continue
+            stem = Path(filename).stem
+            ext = Path(filename).suffix.lower()
+            prev = by_stem.get(stem)
+            if prev:
+                prev_ext = Path(prev).suffix.lower()
+                if extension_priority.get(ext, -1) <= extension_priority.get(prev_ext, -1):
+                    continue
+            by_stem[stem] = filename
 
         files = []
         for filename in sorted(by_stem.values()):
@@ -1034,6 +1045,7 @@ class DeleteDocumentView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         os.remove(filepath)
+        Document.objects.filter(user=request.user, filename=safe_name).delete()
         ensure_documents_loaded(request.user, force=True)
         return Response(
             {'message': f'"{safe_name}" deleted and index rebuilt.'},
@@ -1218,6 +1230,7 @@ class UploadURLView(APIView):
 """ CHAT VIEW """
 class ChatView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ChatRateThrottle]
 
     def post(self, request):
         ensure_documents_loaded(request.user)
@@ -1257,8 +1270,25 @@ class ChatView(APIView):
             for m in past_messages
         ]
 
-        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=3)
-        sources = list(dict.fromkeys([chunk_sources[i] for i in top_indices]))
+        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=10)
+        sources = [chunk_sources[i] for i in top_indices]
+
+        # Rerank to top-3 for higher precision.
+        reranked = rerank(question, top_chunks, top_k=3)
+        reranked_chunks = [r["chunk"] for r in reranked]
+        reranked_sources = [sources[r["index"]] for r in reranked] if reranked else sources[:3]
+
+        # Remove overlapping chunks to avoid sending redundant context to the LLM.
+        reranked_chunks, reranked_sources = remove_overlapping_chunks(reranked_chunks, reranked_sources)
+
+        # Compress chunks to keep only query-relevant sentences.
+        try:
+            compressed = compress_chunks(question, reranked_chunks, get_embedding_model())
+        except Exception:
+            compressed = reranked_chunks
+
+        final_chunks = compressed if compressed else reranked_chunks
+        final_sources = list(dict.fromkeys(reranked_sources))
         try:
             profile, _ = UserProfile.objects.get_or_create(user=request.user)
             allowed_models = PROVIDER_MODELS.get(profile.llm_provider, [])
@@ -1269,7 +1299,7 @@ class ChatView(APIView):
                 )
             answer = generate_answer(
                 question,
-                top_chunks,
+                final_chunks,
                 provider=profile.llm_provider,
                 model=profile.llm_model,
                 api_key=decrypt_value(profile.llm_api_key),
@@ -1295,8 +1325,8 @@ class ChatView(APIView):
             conversation=conversation,
             question=question,
             answer=answer,
-            sources=sources,
-            chunks=top_chunks,
+            sources=final_sources,
+            chunks=final_chunks,
         )
         return Response({
             'id': chat.id,
@@ -1697,6 +1727,12 @@ class MoveDocumentView(APIView):
     permission_classes = [IsAuthenticated]
 
     def put(self, request, filename):
+        safe_name, filepath = _resolve_document_path(request.user, filename)
+        if not filepath:
+            return Response(
+                {'error': f'Document {safe_name or filename} not found!'},
+                status=status.HTTP_404_NOT_FOUND
+            )
         collection_id = request.data.get('collection_id')
         collection = None
         if collection_id:

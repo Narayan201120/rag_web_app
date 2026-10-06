@@ -89,6 +89,13 @@ function renderAnswerMarkdown(answer) {
     return blocks;
 }
 
+// source_statuses arrived after sources. Without it (older backend, or a live
+// stream) every source counts as available.
+function isSourceStale(message, index) {
+    const status = message.source_statuses?.[index];
+    return Boolean(status) && status.available === false;
+}
+
 function Chat({ conversations, conversationId, onLoadConversation, onNewConversation, onRefreshConversations }) {
     const [question, setQuestion] = useState('');
     const [messages, setMessages] = useState([]);
@@ -118,6 +125,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                         question: m.question,
                         answer: m.answer,
                         sources: m.sources,
+                        source_statuses: m.source_statuses,
                     }))
                 );
             } catch (err) {
@@ -158,6 +166,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                         question: askedQuestion,
                         answer: event.answer,
                         sources: event.sources || [],
+                        source_statuses: event.source_statuses,
                     };
                     setMessages((prev) => [...prev, newMsg]);
                     setStreamingAnswer(null);
@@ -239,12 +248,19 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                                 
                                 {msg.sources && msg.sources.length > 0 && (
                                     <div className="citations">
-                                        {msg.sources.map((s, sidx) => (
-                                            <span key={sidx} className="citation-chip">
-                                                <span className="material-symbols-outlined citation-icon">description</span>
-                                                [{sidx + 1}] {s}
-                                            </span>
-                                        ))}
+                                        {msg.sources.map((s, sidx) => {
+                                            const stale = isSourceStale(msg, sidx);
+                                            return (
+                                                <span
+                                                    key={sidx}
+                                                    className={`citation-chip${stale ? ' citation-stale' : ''}`}
+                                                    title={stale ? 'No longer indexed' : undefined}
+                                                >
+                                                    <span className="material-symbols-outlined citation-icon">description</span>
+                                                    [{sidx + 1}] {s}
+                                                </span>
+                                            );
+                                        })}
                                     </div>
                                 )}
 

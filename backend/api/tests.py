@@ -824,6 +824,56 @@ class IngestAndCollectionEndpointSmokeTests(TestCase):
         self.assertEqual(body["answer"], "hi there")
         self.assertEqual(body["sources"], ["f1.md"])
 
+    def test_conversation_detail_marks_missing_sources(self):
+        self._write_user_file("present.md")
+        conv = Conversation.objects.create(user=self.user, title="c")
+        ChatMessage.objects.create(
+            user=self.user, conversation=conv, question="q", answer="a",
+            sources=["present.md", "ghost.md"], chunks=["x", "y"],
+        )
+
+        response = self.api_client.get(f"/api/chat/conversations/{conv.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        msg = response.json()["messages"][0]
+        self.assertEqual(msg["sources"], ["present.md", "ghost.md"])
+        self.assertEqual(msg["source_statuses"], [
+            {"name": "present.md", "available": True},
+            {"name": "ghost.md", "available": False},
+        ])
+
+    def test_citations_mark_missing_sources(self):
+        self._write_user_file("present.md")
+        conv = Conversation.objects.create(user=self.user, title="c")
+        chat = ChatMessage.objects.create(
+            user=self.user, conversation=conv, question="q", answer="a",
+            sources=["present.md", "ghost.md"], chunks=["x", "y"],
+        )
+
+        response = self.api_client.get(f"/api/chat/{chat.id}/citations/")
+
+        self.assertEqual(response.status_code, 200)
+        cites = {c["source"]: c for c in response.json()["citations"]}
+        self.assertTrue(cites["present.md"]["available"])
+        self.assertFalse(cites["ghost.md"]["available"])
+
+    @patch("api.views.load_documents")
+    def test_reindex_registers_unlisted_files(self, mock_load):
+        def _fake_load(user, progress_callback=None, is_cancelled=None):
+            api_views.docs = ["hello"]
+            api_views.chunk_sources = ["newfile.md"]
+        mock_load.side_effect = _fake_load
+        orig_docs = list(api_views.docs)
+        orig_sources = list(api_views.chunk_sources)
+        try:
+            result = api_views._run_reindex_task(self.user.id)
+        finally:
+            api_views.docs = orig_docs
+            api_views.chunk_sources = orig_sources
+
+        self.assertIn("newfile.md", result["documents"])
+        self.assertTrue(Document.objects.filter(user=self.user, filename="newfile.md").exists())
+
 
 class URLParsingHelperTests(TestCase):
     def test_fix_common_mojibake_repairs_utf8_text(self):

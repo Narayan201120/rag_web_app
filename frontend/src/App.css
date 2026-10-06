@@ -555,9 +555,24 @@
         background-color: var(--surface-container-high);
     }
 
+    /* File was renamed or deleted after this answer was generated. */
+    .citation-stale {
+        color: var(--outline);
+        text-decoration: line-through;
+        cursor: help;
+    }
+
+    .citation-stale:hover {
+        background-color: var(--surface-container);
+    }
+
     .citation-icon {
         font-size: 12px;
         color: var(--primary);
+    }
+
+    .citation-stale .citation-icon {
+        color: var(--outline);
     }
 
     .ai-actions {

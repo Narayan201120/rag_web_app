@@ -114,6 +114,15 @@ def _resolve_document_path(user, filename):
     return safe_name, filepath
 
 
+def _source_availability(user, names):
+    """Check which cited filenames still exist on disk. Read-only."""
+    user_dir = _user_doc_dir(user)
+    return [
+        {"name": name, "available": isinstance(name, str) and os.path.isfile(os.path.join(user_dir, name))}
+        for name in (names or [])
+    ]
+
+
 def _fix_common_mojibake(text):
     if not text:
         return text
@@ -683,6 +692,9 @@ def _run_reindex_task(user_id, update=None, is_cancelled=None):
 
     user = User.objects.get(id=user_id)
     load_documents(user, progress_callback=update, is_cancelled=is_cancelled)
+
+    for name in dict.fromkeys(chunk_sources):
+        Document.objects.get_or_create(user=user, filename=Path(name).name)
 
     return {
         "message": "Documents ingested successfully.",
@@ -1450,9 +1462,9 @@ class ChatStreamView(APIView):
                     sources=final_sources,
                     chunks=final_chunks,
                 )
-                yield f"data: {_json.dumps({'done': True, 'id': chat.id, 'conversation_id': conversation.id, 'answer': full_answer, 'sources': final_sources})}\n\n"
+                yield f"data: {_json.dumps({'done': True, 'id': chat.id, 'conversation_id': conversation.id, 'answer': full_answer, 'sources': final_sources, 'source_statuses': _source_availability(request.user, final_sources)})}\n\n"
             except Exception:
-                yield f"data: {_json.dumps({'done': True, 'answer': full_answer, 'sources': final_sources})}\n\n"
+                yield f"data: {_json.dumps({'done': True, 'answer': full_answer, 'sources': final_sources, 'source_statuses': _source_availability(request.user, final_sources)})}\n\n"
 
         return StreamingHttpResponse(event_stream(), content_type='text/event-stream')
 
@@ -1498,6 +1510,7 @@ class ConversationDetailView(APIView):
                 'question': m.question,
                 'answer': m.answer,
                 'sources': m.sources,
+                'source_statuses': _source_availability(request.user, m.sources),
                 'created_at': m.created_at,
             } for m in messages],
         }, status=status.HTTP_200_OK)
@@ -1633,12 +1646,15 @@ class ChatCitationsView(APIView):
                 {'error': 'Chat not found.'},
                 status=status.HTTP_404_NOT_FOUND
             )
+        statuses = {s["name"]: s["available"] for s in _source_availability(request.user, chat.sources)}
         citations = []
         for i, chunk in enumerate(chat.chunks):
+            source = chat.sources[i] if i < len(chat.sources) else 'unknown'
             citations.append({
                 'index': i+1,
                 'text': chunk,
-                'source': chat.sources[i] if i < len(chat.sources) else 'unknown',
+                'source': source,
+                'available': statuses.get(source, False),
             })
         return Response({
             'chat_id': chat.id,

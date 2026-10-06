@@ -111,19 +111,19 @@ Given the storage of User PII, API Keys, and potentially sensitive uploaded docu
 
 ### 🔴 Immediate (Days 1-14)
 
-* [ ] **Data:** Encrypt user LLM API Keys in the `UserProfile` model at rest.
+* [x] **Data:** Encrypt user LLM API Keys in the `UserProfile` model at rest. (Done: `api/encryption.py` Fernet, production refuses to boot without `FIELD_ENCRYPTION_KEY`.)
 
-* [ ] **Auth:** Move JWT Refresh tokens from LocalStorage to `HttpOnly` Secure Cookies.
-* [ ] **API:** Implement Strict Rate Limiting on authentication, `/api/ask/`, and URL ingest endpoints.
-* [ ] **Infra:** Set up `pip-audit` & `npm audit` in the CI/CD pipeline.
+* [x] **Auth:** Move JWT Refresh tokens from LocalStorage to `HttpOnly` Secure Cookies. (Done: `CookieTokenRefreshView`.)
+* [x] **API:** Implement Strict Rate Limiting on authentication, `/api/ask/`, and URL ingest endpoints. (Done: DRF default anon/auth throttles plus `ChatRateThrottle` on ask/chat/stream; token-refresh and health explicitly exempt.)
+* [ ] **Infra:** Set up `pip-audit` & `npm audit` in the CI/CD pipeline. (Not done: `ci.yml` has backend + frontend test jobs only.)
 
 ### 🟡 Short-Term (Month 1-2)
 
-* [ ] **Config:** Enforce HSTS and configure a strict Content-Security-Policy (CSP) in Django.
+* [ ] **Config:** Enforce HSTS and configure a strict Content-Security-Policy (CSP) in Django. (Partial: HSTS + secure cookies set in `settings.py`; no CSP headers.)
 
-* [ ] **IAM:** Implement simple Multi-Factor Authentication (MFA) for users.
-* [ ] **Monitoring:** Implement a centralized logging solution (e.g., Datadog, Sentry) and configure Critical Alerts.
-* [ ] **Compliance:** Implement "Right to be Forgotten" account deletion mechanisms covering local files.
+* [ ] **IAM:** Implement simple Multi-Factor Authentication (MFA) for users. (Not done: no MFA/TOTP code in `backend/`.)
+* [ ] **Monitoring:** Implement a centralized logging solution (e.g., Datadog, Sentry) and configure Critical Alerts. (Partial: JSON structured logging via `api/log_formatter.py`; no external alerting.)
+* [x] **Compliance:** Implement "Right to be Forgotten" account deletion mechanisms covering local files. (Done: `DeleteAccountView` removes the user directory, resets the index, and deletes the row.)
 
 ### 🟢 Long-Term (Month 3-6)
 

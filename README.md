@@ -194,16 +194,28 @@ dashboard: `DATABASE_URL`, `DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`,
 ```
 rag_web_app/
 ├── backend/                # Django backend
-│   ├── api/                # Django app (views, models, serializers, tasks)
+│   ├── api/                # Django app
 │   │   ├── views.py        # All API endpoints + web scraping + RAG pipeline
 │   │   ├── generator.py    # LLM provider routing
-│   │   ├── retriever.py    # FAISS index + embedding logic
+│   │   ├── retriever.py    # FAISS + BM25 hybrid search + reranking
+│   │   ├── chunker.py      # Semantic chunking
+│   │   ├── compressor.py   # Context compression
+│   │   ├── llm_catalog.py  # Provider -> model lists
+│   │   ├── tasks.py        # Celery background tasks
+│   │   ├── throttles.py    # Rate limiting
+│   │   ├── encryption.py   # API key encryption
+│   │   ├── middleware.py   # Request tracing
 │   │   └── models.py       # UserProfile, Conversation, ChatMessage, Collection, Task
-│   ├── config/             # Django project settings and URL config
+│   ├── config/             # Settings, URLs, Celery app
 │   ├── manage.py
+│   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/               # React application
-│   └── src/components/     # Login, Signup, Chat, Documents, Search, Settings, Admin
+│   └── src/
+│       ├── apiClient.js    # Axios client + SSE streaming
+│       └── components/     # Login, Signup, Chat, Documents, Search, Settings, Admin
+├── docker-compose.yml      # Postgres + Redis + backend + celery + frontend
+├── .github/workflows/ci.yml
 └── render.yaml             # Render deployment config
 ```
 

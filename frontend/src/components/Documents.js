@@ -1,137 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiClient, requestWithRefresh } from '../apiClient';
-
-// Render LaTeX using KaTeX (loaded from CDN in index.html).
-// Returns an HTML string on success, or null if KaTeX isn't ready.
-function katexRender(latex, display) {
-    try {
-        if (window.katex) {
-            return window.katex.renderToString(latex.trim(), {
-                displayMode: display,
-                throwOnError: false,
-            });
-        }
-    } catch (e) { /* ignore */ }
-    return null;
-}
-
-// Render a single text line, turning $...$ into inline KaTeX elements.
-function renderLine(text, keyPrefix) {
-    const parts = [];
-    let rest = text;
-    let idx = 0;
-    while (rest.length > 0) {
-        const s = rest.indexOf('$');
-        if (s === -1) { parts.push(<span key={`${keyPrefix}-t${idx}`}>{rest}</span>); break; }
-        if (s > 0) parts.push(<span key={`${keyPrefix}-t${idx}`}>{rest.slice(0, s)}</span>);
-        const e = rest.indexOf('$', s + 1);
-        if (e === -1) { parts.push(<span key={`${keyPrefix}-t${idx}`}>{rest.slice(s)}</span>); break; }
-        const latex = rest.slice(s + 1, e);
-        const html = katexRender(latex, false);
-        if (html) {
-            parts.push(<span key={`${keyPrefix}-m${idx}`} dangerouslySetInnerHTML={{ __html: html }} />);
-        } else {
-            parts.push(<span key={`${keyPrefix}-m${idx}`}><code>{`$${latex}$`}</code></span>);
-        }
-        rest = rest.slice(e + 1);
-        idx++;
-    }
-    // If no math found, return the raw string for simpler DOM output.
-    if (parts.length === 1 && parts[0].props?.children === text) return text;
-    return parts;
-}
-
-function renderMarkdownContent(content) {
-    const text = String(content || '');
-    const nodes = [];
-    let listBuffer = [];
-    let listType = null;
-    let pos = 0;
-
-    const flushList = () => {
-        if (!listBuffer.length) return;
-        const Tag = listType === 'ol' ? 'ol' : 'ul';
-        nodes.push(
-            <Tag key={`list-${nodes.length}`} className="md-list">
-                {listBuffer.map((item, i) => <li key={i}>{renderLine(item, `li-${i}`)}</li>)}
-            </Tag>
-        );
-        listBuffer = [];
-        listType = null;
-    };
-
-    // First pass: split on $$...$$ display blocks (which may span multiple lines).
-    const segments = [];
-    while (pos < text.length) {
-        const start = text.indexOf('$$', pos);
-        if (start === -1) {
-            text.slice(pos).split('\n').forEach(l => segments.push({ type: 'line', text: l }));
-            break;
-        }
-        if (start > pos) {
-            text.slice(pos, start).split('\n').forEach(l => segments.push({ type: 'line', text: l }));
-        }
-        const end = text.indexOf('$$', start + 2);
-        if (end === -1) {
-            text.slice(start).split('\n').forEach(l => segments.push({ type: 'line', text: l }));
-            break;
-        }
-        segments.push({ type: 'display', text: text.slice(start + 2, end).trim() });
-        pos = end + 2;
-    }
-
-    // Second pass: render each segment.
-    segments.forEach((seg, i) => {
-        if (seg.type === 'display') {
-            flushList();
-            const html = katexRender(seg.text, true);
-            if (html) {
-                nodes.push(<div key={`dm-${i}`} className="md-math-block" dangerouslySetInnerHTML={{ __html: html }} />);
-            } else {
-                nodes.push(<pre key={`dm-${i}`} className="md-math-block"><code>{seg.text}</code></pre>);
-            }
-            return;
-        }
-
-        const line = seg.text.trim();
-        if (!line) { flushList(); return; }
-
-        const heading = line.match(/^(#{1,6})\s+(.*)$/);
-        if (heading) {
-            flushList();
-            const level = heading[1].length;
-            const Tag = `h${Math.min(6, level)}`;
-            nodes.push(<Tag key={`h-${i}`}>{renderLine(heading[2], `h-${i}`)}</Tag>);
-            return;
-        }
-
-        const ordered = line.match(/^\d+\.\s+(.*)$/);
-        if (ordered) {
-            if (listType && listType !== 'ol') flushList();
-            listType = 'ol'; listBuffer.push(ordered[1]); return;
-        }
-
-        const unordered = line.match(/^[-*]\s+(.*)$/);
-        if (unordered) {
-            if (listType && listType !== 'ul') flushList();
-            listType = 'ul'; listBuffer.push(unordered[1]); return;
-        }
-
-        const blockquote = line.match(/^>\s+(.*)/);
-        if (blockquote) {
-            flushList();
-            nodes.push(<blockquote key={`bq-${i}`} className="md-blockquote">{renderLine(blockquote[1], `bq-${i}`)}</blockquote>);
-            return;
-        }
-
-        flushList();
-        nodes.push(<p key={`p-${i}`}>{renderLine(line, `p-${i}`)}</p>);
-    });
-
-    flushList();
-    return nodes;
-}
-
+import DocumentPreview from './DocumentPreview';
 
 const EXT_ICONS = {
     '.pdf':  { icon: '\u{1F4C4}', label: 'PDF' },
@@ -151,39 +20,13 @@ function Documents({ onCollectionsChange }) {
     const [url, setUrl] = useState('');
     const [message, setMessage] = useState('');
     const [taskInfo, setTaskInfo] = useState(null);
-    const [previewDoc, setPreviewDoc] = useState(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
+    const [previewName, setPreviewName] = useState(null);
     const [collections, setCollections] = useState([]);
     const [confirmDelete, setConfirmDelete] = useState(null);
     const [renaming, setRenaming] = useState(null);
     const [renameValue, setRenameValue] = useState('');
     const renameRef = useRef(null);
     const pollRef = useRef(null);
-    const previewBodyRef = useRef(null);
-
-    useEffect(() => {
-        if (window.MathJax) return;
-        window.MathJax = {
-            tex: {
-                inlineMath: [['$', '$'], ['\\(', '\\)']],
-                displayMath: [['$$', '$$'], ['\\[', '\\]']],
-            },
-            svg: { fontCache: 'global' },
-        };
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
-        script.async = true;
-        document.head.appendChild(script);
-    }, []);
-
-    useEffect(() => {
-        if (!previewDoc || previewDoc.extension !== '.md') return;
-        if (!window.MathJax || !previewBodyRef.current) return;
-        if (window.MathJax.typesetPromise) {
-            window.MathJax.typesetClear?.([previewBodyRef.current]);
-            window.MathJax.typesetPromise([previewBodyRef.current]).catch(() => { });
-        }
-    }, [previewDoc]);
 
     const normalizeHttpUrl = (rawValue) => {
         const trimmed = (rawValue || '').trim();
@@ -361,20 +204,12 @@ function Documents({ onCollectionsChange }) {
         }
     };
 
-    const handleOpen = async (filename) => {
-        setPreviewLoading(true);
-        try {
-            const res = await requestWithRefresh((headers) => apiClient.get(`/documents/${encodeURIComponent(filename)}/`, { headers }));
-            setPreviewDoc(res.data);
-        } catch (err) {
-            setMessage(err.response?.data?.error || 'Failed to open document.');
-        } finally {
-            setPreviewLoading(false);
-        }
+    const handleOpen = (filename) => {
+        setPreviewName(filename);
     };
 
     const closePreview = () => {
-        setPreviewDoc(null);
+        setPreviewName(null);
     };
 
     return (
@@ -478,35 +313,8 @@ function Documents({ onCollectionsChange }) {
                 </div>
             )}
 
-            {(previewLoading || previewDoc) && (
-                <div className="doc-preview-overlay" onClick={closePreview}>
-                    <div className="doc-preview-modal" onClick={(e) => e.stopPropagation()}>
-                        <div className="doc-preview-header">
-                            <h3>{previewDoc?.name || 'Opening document...'}</h3>
-                            <button className="close-preview-btn" onClick={closePreview}>Close</button>
-                        </div>
-                        <div className="doc-preview-body">
-                            {previewLoading ? (
-                                <p>Loading document content...</p>
-                            ) : (
-                                <>
-                                    {previewDoc?.extension === '.md' ? (
-                                        <div className="md-preview" ref={previewBodyRef}>
-                                            {renderMarkdownContent(previewDoc?.content || '')}
-                                        </div>
-                                    ) : (
-                                        <pre>{previewDoc?.content || 'No text extracted from this document.'}</pre>
-                                    )}
-                                    {previewDoc?.truncated && (
-                                        <p className="preview-note">
-                                            Showing first 20,000 characters.
-                                        </p>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
+            {previewName && (
+                <DocumentPreview name={previewName} onClose={closePreview} />
             )}
         </div>
     );

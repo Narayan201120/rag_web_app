@@ -3,6 +3,6 @@ import App from './App';
 
 test('renders login heading', () => {
   render(<App />);
-  const headingElement = screen.getByText(/RAG \/ DOCUMENT AI/i);
+  const headingElement = screen.getByText(/DocuMind/i);
   expect(headingElement).toBeInTheDocument();
 });

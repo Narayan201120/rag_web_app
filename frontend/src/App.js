@@ -1,4 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+    BrowserRouter,
+    Navigate,
+    NavLink,
+    Route,
+    Routes,
+    useLocation,
+    useMatch,
+    useNavigate
+} from 'react-router-dom';
 import Login from './components/Login';
 import Signup from './components/Signup';
 import Chat from './components/Chat';
@@ -8,29 +18,55 @@ import Settings from './components/Settings';
 import { apiClient, clearAccessToken, getAuthHeaders, hasAccessToken, requestWithRefresh } from './apiClient';
 import './App.css';
 
-function App() {
+const AUTH_PATHS = ['/login', '/signup'];
+
+// `end` stays false everywhere so "/chat/42" and "/settings/account" keep
+// their parent nav item highlighted.
+const NAV_ITEMS = [
+    { to: '/chat', label: 'Chat', icon: 'chat' },
+    { to: '/documents', label: 'Documents', icon: 'description' },
+    { to: '/search', label: 'Search', icon: 'search' },
+    { to: '/settings', label: 'Settings', icon: 'settings' }
+];
+
+function isAuthPath(pathname) {
+    return AUTH_PATHS.includes(pathname);
+}
+
+function conversationTitle(conv) {
+    return (conv.title || '').trim() || 'Untitled chat';
+}
+
+function AppShell() {
+    const location = useLocation();
+    const navigate = useNavigate();
+    const chatMatch = useMatch('/chat/:conversationId');
+    const activeConversationId = chatMatch ? chatMatch.params.conversationId : null;
+
     const [loggedIn, setLoggedIn] = useState(hasAccessToken());
-    const [showSignup, setShowSignup] = useState(false);
-    const [page, setPage] = useState('chat');
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [apiOnline, setApiOnline] = useState(null);
 
     const [conversations, setConversations] = useState([]);
-    const [conversationId, setConversationId] = useState(null);
     const [menuOpenConvId, setMenuOpenConvId] = useState(null);
     const [renamingConvId, setRenamingConvId] = useState(null);
     const [renamingTitle, setRenamingTitle] = useState('');
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const [collections, setCollections] = useState([]);
-    const [projectsOpen, setProjectsOpen] = useState(true);
+    const [collectionsOpen, setCollectionsOpen] = useState(true);
     const [creatingCollection, setCreatingCollection] = useState(false);
     const [newCollectionName, setNewCollectionName] = useState('');
     const [expandedColId, setExpandedColId] = useState(null);
     const [collectionDocs, setCollectionDocs] = useState({});
     const [sidebarDocMenu, setSidebarDocMenu] = useState(null);
+
     const collectionInputRef = useRef(null);
     const menuRef = useRef(null);
     const renameInputRef = useRef(null);
     const sidebarMenuRef = useRef(null);
+    const menuToggleRef = useRef(null);
+    const sidebarCloseRef = useRef(null);
+    const mobileMenuWasOpen = useRef(false);
 
     const loadConversations = useCallback(async () => {
         try {
@@ -56,6 +92,22 @@ function App() {
             fetchCollections();
         }
     }, [loggedIn, loadConversations, fetchCollections]);
+
+    // Small, honest health probe. The endpoint is public and unthrottled, so it is
+    // called without auth headers to keep a stale token from faking an outage.
+    useEffect(() => {
+        let cancelled = false;
+        const checkHealth = async () => {
+            try {
+                await apiClient.get('/health/', { timeout: 5000 });
+                if (!cancelled) setApiOnline(true);
+            } catch {
+                if (!cancelled) setApiOnline(false);
+            }
+        };
+        checkHealth();
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
         if (renamingConvId) {
@@ -83,10 +135,53 @@ function App() {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    const handleNavClick = (newPage) => {
-        setPage(newPage);
+    // The documents view owns collection state, so refresh the sidebar copy on entry.
+    useEffect(() => {
+        if (loggedIn && location.pathname.startsWith('/documents')) {
+            fetchCollections();
+        }
+    }, [loggedIn, location.pathname, fetchCollections]);
+
+    // Any route change (including browser back) dismisses the mobile drawer.
+    useEffect(() => {
         setMobileMenuOpen(false);
-        if (newPage === 'documents') fetchCollections();
+    }, [location.pathname]);
+
+    useEffect(() => {
+        if (!mobileMenuOpen) return;
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') setMobileMenuOpen(false);
+        };
+        document.addEventListener('keydown', handleEscape);
+        return () => document.removeEventListener('keydown', handleEscape);
+    }, [mobileMenuOpen]);
+
+    useEffect(() => {
+        if (mobileMenuOpen) {
+            sidebarCloseRef.current?.focus();
+        } else if (mobileMenuWasOpen.current) {
+            menuToggleRef.current?.focus();
+        }
+        mobileMenuWasOpen.current = mobileMenuOpen;
+    }, [mobileMenuOpen]);
+
+    const closeTransientUi = () => {
+        setMenuOpenConvId(null);
+        setSidebarDocMenu(null);
+        setDeleteConfirmId(null);
+        setRenamingConvId(null);
+        setMobileMenuOpen(false);
+    };
+
+    const handleNavClick = () => {
+        setMobileMenuOpen(false);
+        setMenuOpenConvId(null);
+        setSidebarDocMenu(null);
+    };
+
+    const handleLogin = () => {
+        setLoggedIn(true);
+        navigate('/chat', { replace: true });
     };
 
     const handleLogout = async () => {
@@ -99,19 +194,29 @@ function App() {
         clearAccessToken();
         setLoggedIn(false);
         setConversations([]);
-        setConversationId(null);
+        setCollections([]);
+        setCollectionDocs({});
+        setExpandedColId(null);
+        closeTransientUi();
+        navigate('/login', { replace: true });
     };
 
     const handleLoadConversation = (convId) => {
-        setConversationId(convId);
-        if (page !== 'chat') setPage('chat');
+        setMenuOpenConvId(null);
+        setDeleteConfirmId(null);
+        setRenamingConvId(null);
+        setSidebarDocMenu(null);
         setMobileMenuOpen(false);
+        navigate(`/chat/${convId}`);
     };
 
     const handleNewConversation = () => {
-        setConversationId(null);
-        if (page !== 'chat') setPage('chat');
+        setMenuOpenConvId(null);
+        setDeleteConfirmId(null);
+        setRenamingConvId(null);
+        setSidebarDocMenu(null);
         setMobileMenuOpen(false);
+        navigate('/chat');
     };
 
     const handleTogglePin = async (convId, currentlyPinned) => {
@@ -140,10 +245,11 @@ function App() {
     };
 
     const handleDelete = async (convId) => {
+        const wasActive = String(convId) === activeConversationId;
         try {
             await requestWithRefresh((headers) => apiClient.delete(`/chat/conversations/${convId}/`, { headers }));
-            if (conversationId === convId) {
-                setConversationId(null);
+            if (wasActive) {
+                navigate('/chat');
             }
             loadConversations();
         } catch (err) {
@@ -169,9 +275,11 @@ function App() {
     const handleToggleCollection = async (colId) => {
         if (expandedColId === colId) {
             setExpandedColId(null);
+            setSidebarDocMenu(null);
             return;
         }
         setExpandedColId(colId);
+        setSidebarDocMenu(null);
         try {
             const res = await requestWithRefresh((headers) => apiClient.get(`/collections/${colId}/`, { headers }));
             setCollectionDocs(prev => ({ ...prev, [colId]: res.data.documents }));
@@ -208,273 +316,418 @@ function App() {
         setSidebarDocMenu(null);
     };
 
-    if (!loggedIn) {
-        if (showSignup) {
-            return <Signup onSwitch={() => setShowSignup(false)} />;
-        }
-        return <Login onLogin={() => setLoggedIn(true)} onSwitch={() => setShowSignup(true)} />;
+    // ---- Auth gate -------------------------------------------------------
+    if (!loggedIn && !isAuthPath(location.pathname)) {
+        return <Navigate to="/login" replace />;
     }
 
+    if (loggedIn && isAuthPath(location.pathname)) {
+        return <Navigate to="/chat" replace />;
+    }
+
+    if (!loggedIn) {
+        return (
+            <Routes>
+                <Route path="/login" element={<Login onLogin={handleLogin} onSwitch={() => navigate('/signup')} />} />
+                <Route path="/signup" element={<Signup onSwitch={() => navigate('/login')} />} />
+                <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
+        );
+    }
+
+    // ---- Authenticated app shell ----------------------------------------
+    const chatProps = {
+        conversations,
+        onLoadConversation: handleLoadConversation,
+        onNewConversation: handleNewConversation,
+        onRefreshConversations: loadConversations
+    };
+
+    const statusText = apiOnline === true ? 'Online' : apiOnline === false ? 'Offline' : 'Checking';
+    const statusModifier = apiOnline === true ? ' is-online' : apiOnline === false ? ' is-offline' : '';
+
     return (
-        <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-            <div className={`sidebar-overlay ${mobileMenuOpen ? 'open' : ''}`} onClick={() => setMobileMenuOpen(false)}></div>
-            
-            <nav className={`sidebar font-headline ${mobileMenuOpen ? 'mobile-open' : ''}`}>
-                <div className="sidebar-header">
-                    <h1 className="sidebar-title">DocuMind</h1>
-                    <div className="status-indicator-container">
-                        <span aria-label="System Status Indicator" className="status-dot online"></span>
-                        <span className="status-text">SYSTEM ONLINE</span>
+        <div className="app-shell">
+            <div
+                className={`app-sidebar-overlay${mobileMenuOpen ? ' is-open' : ''}`}
+                onClick={() => setMobileMenuOpen(false)}
+                aria-hidden="true"
+            />
+
+            <nav
+                id="app-sidebar"
+                className={`app-sidebar font-headline${mobileMenuOpen ? ' is-open' : ''}`}
+                aria-label="Primary"
+            >
+                <div className="app-sidebar-header">
+                    <div className="app-brand">DocuMind</div>
+                    <div className="app-status" role="status" aria-live="polite">
+                        <span className={`app-status-dot${statusModifier}`} aria-hidden="true" />
+                        <span className="app-status-label">{statusText}</span>
                     </div>
+                    <button
+                        type="button"
+                        ref={sidebarCloseRef}
+                        className="app-sidebar-close"
+                        onClick={() => setMobileMenuOpen(false)}
+                        aria-label="Close menu"
+                    >
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
+                    </button>
                 </div>
 
-                <div className="nav-tabs">
-                    <button className={`nav-tab ${page === 'chat' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('chat')}>
-                        <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1", fontSize: "1.25rem" }}>chat</span>
-                        <span className="font-label nav-tab-label">Chat</span>
-                    </button>
-                    <button className={`nav-tab ${page === 'documents' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('documents')}>
-                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>description</span>
-                        <span className="font-label nav-tab-label">Documents</span>
-                    </button>
-                    <button className={`nav-tab ${page === 'search' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('search')}>
-                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>search</span>
-                        <span className="font-label nav-tab-label">Search</span>
-                    </button>
-                    <button className={`nav-tab ${page === 'settings' ? 'nav-tab-active' : 'nav-tab-inactive'}`} onClick={() => handleNavClick('settings')}>
-                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>settings</span>
-                        <span className="font-label nav-tab-label">Settings</span>
-                    </button>
-
-                    <div className="conversations-section">
-                        <h3 className="sidebar-section-title">Recent Chats</h3>
-                        <div className="conversations-list" ref={menuRef}>
-                            {conversations && conversations.length > 0 ? (
-                                conversations.map(conv => (
-                                    <div
-                                        key={conv.id}
-                                        className={`conv-item-wrapper ${conversationId === conv.id ? 'active' : ''}`}
+                <div className="app-nav">
+                    {NAV_ITEMS.map((item) => (
+                        <NavLink
+                            key={item.to}
+                            to={item.to}
+                            className={({ isActive }) => `app-nav-link${isActive ? ' is-active' : ''}`}
+                            onClick={handleNavClick}
+                        >
+                            {({ isActive }) => (
+                                <>
+                                    <span
+                                        className="app-nav-icon material-symbols-outlined"
+                                        style={isActive ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                                        aria-hidden="true"
                                     >
-                                        <button
-                                            className="conv-item"
-                                            onClick={() => handleLoadConversation(conv.id)}
-                                        >
-                                            <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>
-                                                {conv.pinned ? 'push_pin' : 'chat_bubble'}
-                                            </span>
-                                            {renamingConvId === conv.id ? (
-                                                <input
-                                                    ref={renameInputRef}
-                                                    className="conv-rename-input"
-                                                    value={renamingTitle}
-                                                    onChange={(e) => setRenamingTitle(e.target.value)}
-                                                    onBlur={() => handleRename(conv.id, renamingTitle)}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === 'Enter') handleRename(conv.id, renamingTitle);
-                                                        if (e.key === 'Escape') setRenamingConvId(null);
-                                                    }}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                />
-                                            ) : (
-                                                <span className="conv-title">{conv.title || `Chat ${String(conv.id).substring(0, 8)}`}</span>
-                                            )}
-                                        </button>
-                                        <div className="conv-actions">
-                                            <button
-                                                className="conv-action-btn"
-                                                onClick={(e) => { e.stopPropagation(); handleTogglePin(conv.id, conv.pinned); }}
-                                                title={conv.pinned ? 'Unpin' : 'Pin'}
-                                            >
-                                                <span className="material-symbols-outlined conv-action-icon">
-                                                    {conv.pinned ? 'push_pin' : 'push_pin'}
-                                                </span>
-                                            </button>
-                                            <button
-                                                className="conv-action-btn"
-                                                onClick={(e) => { e.stopPropagation(); setMenuOpenConvId(menuOpenConvId === conv.id ? null : conv.id); }}
-                                                title="More"
-                                            >
-                                                <span className="material-symbols-outlined conv-action-icon">more_horiz</span>
-                                            </button>
-                                        </div>
-                                        {menuOpenConvId === conv.id && (
-                                            <div className="conv-dropdown" onClick={(e) => e.stopPropagation()}>
-                                                <button
-                                                    className="conv-dropdown-item"
-                                                    onClick={() => { setRenamingConvId(conv.id); setRenamingTitle(conv.title); setMenuOpenConvId(null); }}
-                                                >
-                                                    <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>edit</span>
-                                                    Rename
-                                                </button>
-                                                {deleteConfirmId === conv.id ? (
-                                                    <div className="conv-delete-confirm">
-                                                        <span>Delete?</span>
-                                                        <button className="conv-delete-yes" onClick={() => handleDelete(conv.id)}>Yes</button>
-                                                        <button className="conv-delete-no" onClick={() => setDeleteConfirmId(null)}>No</button>
-                                                    </div>
-                                                ) : (
-                                                    <button
-                                                        className="conv-dropdown-item conv-dropdown-danger"
-                                                        onClick={() => setDeleteConfirmId(conv.id)}
-                                                    >
-                                                        <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>delete</span>
-                                                        Delete
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))
-                            ) : (
-                                <div style={{ paddingLeft: '1rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--outline)', fontFamily: 'var(--font-ui)' }}>
-                                    No recent chats
-                                </div>
+                                        {item.icon}
+                                    </span>
+                                    <span className="app-nav-label">{item.label}</span>
+                                </>
                             )}
-                        </div>
-                    </div>
+                        </NavLink>
+                    ))}
+                </div>
 
-                    <div className="projects-section">
-                        <div className="projects-header">
-                            <button className="projects-toggle" onClick={() => setProjectsOpen(!projectsOpen)}>
-                                <span className="material-symbols-outlined projects-arrow" style={{ fontSize: '1rem' }}>
-                                    {projectsOpen ? 'expand_more' : 'chevron_right'}
+                <div className="app-sidebar-body">
+                    <section className="app-sidebar-section">
+                        <div className="app-sidebar-section-header">
+                            <span className="app-sidebar-section-title">Recent Chats</span>
+                            <button
+                                type="button"
+                                className="app-sidebar-section-action"
+                                onClick={handleNewConversation}
+                                aria-label="New chat"
+                                title="New chat"
+                            >
+                                <span className="material-symbols-outlined" aria-hidden="true">add</span>
+                            </button>
+                        </div>
+                        <ul className="app-conversation-list" ref={menuRef}>
+                            {conversations.length > 0 ? (
+                                conversations.map((conv) => {
+                                    const isActive = String(conv.id) === activeConversationId;
+                                    const isRenaming = renamingConvId === conv.id;
+                                    const title = conversationTitle(conv);
+                                    return (
+                                        <li
+                                            key={conv.id}
+                                            className={`app-conversation-item${isActive ? ' is-active' : ''}`}
+                                        >
+                                            {isRenaming ? (
+                                                <form
+                                                    className="app-rename-form"
+                                                    onSubmit={(e) => {
+                                                        e.preventDefault();
+                                                        handleRename(conv.id, renamingTitle);
+                                                    }}
+                                                >
+                                                    <input
+                                                        ref={renameInputRef}
+                                                        className="app-rename-input"
+                                                        aria-label={`Rename ${title}`}
+                                                        value={renamingTitle}
+                                                        onChange={(e) => setRenamingTitle(e.target.value)}
+                                                        onBlur={() => handleRename(conv.id, renamingTitle)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Escape') setRenamingConvId(null);
+                                                        }}
+                                                    />
+                                                </form>
+                                            ) : (
+                                                <button
+                                                    type="button"
+                                                    className="app-conversation-main"
+                                                    onClick={() => handleLoadConversation(conv.id)}
+                                                    title={title}
+                                                >
+                                                    <span
+                                                        className="app-conversation-icon material-symbols-outlined"
+                                                        style={conv.pinned ? { fontVariationSettings: "'FILL' 1" } : undefined}
+                                                        aria-hidden="true"
+                                                    >
+                                                        {conv.pinned ? 'push_pin' : 'chat_bubble'}
+                                                    </span>
+                                                    <span className="app-conversation-title">{title}</span>
+                                                </button>
+                                            )}
+
+                                            <div className="app-conversation-actions">
+                                                <button
+                                                    type="button"
+                                                    className={`app-icon-button${conv.pinned ? ' is-active' : ''}`}
+                                                    onClick={() => handleTogglePin(conv.id, conv.pinned)}
+                                                    aria-label={conv.pinned ? `Unpin ${title}` : `Pin ${title}`}
+                                                    title={conv.pinned ? 'Unpin' : 'Pin'}
+                                                >
+                                                    <span
+                                                        className="material-symbols-outlined"
+                                                        style={{ fontVariationSettings: conv.pinned ? "'FILL' 1" : "'FILL' 0" }}
+                                                        aria-hidden="true"
+                                                    >
+                                                        push_pin
+                                                    </span>
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="app-icon-button"
+                                                    onClick={() => setMenuOpenConvId(menuOpenConvId === conv.id ? null : conv.id)}
+                                                    aria-label={`More actions for ${title}`}
+                                                    title="More"
+                                                >
+                                                    <span className="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+                                                </button>
+                                            </div>
+
+                                            {menuOpenConvId === conv.id && (
+                                                <div className="app-menu" onClick={(e) => e.stopPropagation()}>
+                                                    {deleteConfirmId === conv.id ? (
+                                                        <div className="app-confirm-row" role="group" aria-label="Delete chat?">
+                                                            <span className="app-confirm-label">Delete chat?</span>
+                                                            <button
+                                                                type="button"
+                                                                className="app-menu-item app-menu-item-danger"
+                                                                onClick={() => handleDelete(conv.id)}
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="app-menu-item"
+                                                                onClick={() => setDeleteConfirmId(null)}
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                className="app-menu-item"
+                                                                onClick={() => {
+                                                                    setRenamingConvId(conv.id);
+                                                                    setRenamingTitle(conv.title);
+                                                                    setMenuOpenConvId(null);
+                                                                }}
+                                                            >
+                                                                <span className="material-symbols-outlined" aria-hidden="true">edit</span>
+                                                                Rename
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="app-menu-item app-menu-item-danger"
+                                                                onClick={() => setDeleteConfirmId(conv.id)}
+                                                            >
+                                                                <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+                                                                Delete
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </li>
+                                    );
+                                })
+                            ) : (
+                                <li className="app-empty-note">No recent chats</li>
+                            )}
+                        </ul>
+                    </section>
+
+                    <section className="app-sidebar-section">
+                        <div className="app-sidebar-section-header">
+                            <button
+                                type="button"
+                                className="app-sidebar-section-toggle"
+                                onClick={() => setCollectionsOpen(!collectionsOpen)}
+                                aria-expanded={collectionsOpen}
+                            >
+                                <span className="material-symbols-outlined" aria-hidden="true">
+                                    {collectionsOpen ? 'expand_more' : 'chevron_right'}
                                 </span>
-                                <span className="sidebar-section-title projects-title">Projects</span>
+                                <span className="app-sidebar-section-title">Collections</span>
                             </button>
                             <button
-                                className="projects-add-btn"
-                                onClick={() => setCreatingCollection(true)}
+                                type="button"
+                                className="app-sidebar-section-action"
+                                onClick={() => {
+                                    setCollectionsOpen(true);
+                                    setCreatingCollection(true);
+                                }}
+                                aria-label="New collection"
                                 title="New collection"
                             >
-                                <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>add</span>
+                                <span className="material-symbols-outlined" aria-hidden="true">add</span>
                             </button>
                         </div>
-                        {projectsOpen && (
-                            <div className="projects-list">
+
+                        {collectionsOpen && (
+                            <ul className="app-collection-list">
                                 {creatingCollection && (
-                                    <div className="conv-item-wrapper">
-                                        <div className="conv-item" style={{ padding: '0.25rem 0.5rem 0.25rem 2.5rem' }}>
+                                    <li className="app-collection-item">
+                                        <form
+                                            className="app-rename-form"
+                                            onSubmit={(e) => {
+                                                e.preventDefault();
+                                                handleCreateCollection();
+                                            }}
+                                        >
                                             <input
                                                 ref={collectionInputRef}
-                                                className="conv-rename-input"
+                                                className="app-rename-input"
                                                 placeholder="Collection name"
+                                                aria-label="Collection name"
                                                 value={newCollectionName}
                                                 onChange={(e) => setNewCollectionName(e.target.value)}
                                                 onBlur={() => { if (!newCollectionName.trim()) setCreatingCollection(false); }}
                                                 onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') handleCreateCollection();
-                                                    if (e.key === 'Escape') { setCreatingCollection(false); setNewCollectionName(''); }
+                                                    if (e.key === 'Escape') {
+                                                        setCreatingCollection(false);
+                                                        setNewCollectionName('');
+                                                    }
                                                 }}
-                                                onClick={(e) => e.stopPropagation()}
                                             />
-                                        </div>
-                                    </div>
+                                        </form>
+                                    </li>
                                 )}
-                                {collections.map((col) => (
-                                    <div key={col.id} className="projects-col-wrapper">
-                                        <button
-                                            className="conv-item projects-item"
-                                            onClick={() => handleToggleCollection(col.id)}
+
+                                {collections.map((col) => {
+                                    const isExpanded = expandedColId === col.id;
+                                    const docs = collectionDocs[col.id];
+                                    const docMenuOpenFor = (docName) => (
+                                        sidebarDocMenu?.docName === docName && sidebarDocMenu?.colId === col.id
+                                    );
+                                    return (
+                                        <li
+                                            key={col.id}
+                                            className={`app-collection-item${isExpanded ? ' is-expanded' : ''}`}
                                         >
-                                            <span className="material-symbols-outlined projects-arrow-col" style={{ fontSize: '1rem' }}>
-                                                {expandedColId === col.id ? 'expand_more' : 'chevron_right'}
-                                            </span>
-                                            <span className="material-symbols-outlined" style={{ fontSize: '1rem', color: 'var(--primary)' }}>folder</span>
-                                            <span className="conv-title">{col.name}</span>
-                                            <span className="projects-doc-count">{col.document_count}</span>
-                                        </button>
-                                        {expandedColId === col.id && (
-                                            <div className="projects-col-docs" ref={sidebarMenuRef}>
-                                                {collectionDocs[col.id]?.length > 0 ? (
-                                                    collectionDocs[col.id].map((doc) => (
-                                                        <div key={doc.name} className={`projects-doc-item${sidebarDocMenu?.docName === doc.name && sidebarDocMenu?.colId === col.id ? ' menu-open' : ''}`}>
-                                                            <span className="projects-doc-name">{doc.name}</span>
-                                                            <div className="projects-doc-actions">
-                                                                <button
-                                                                    className="conv-action-btn"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setSidebarDocMenu(sidebarDocMenu?.docName === doc.name && sidebarDocMenu?.colId === col.id ? null : { colId: col.id, docName: doc.name });
-                                                                    }}
-                                                                >
-                                                                    <span className="material-symbols-outlined" style={{ fontSize: '0.875rem' }}>more_horiz</span>
-                                                                </button>
-                                                                {sidebarDocMenu?.docName === doc.name && sidebarDocMenu?.colId === col.id && (
-                                                                    <div className="conv-dropdown projects-doc-dropdown" onClick={(e) => e.stopPropagation()}>
-                                                                        <div className="conv-dropdown-item" style={{ fontSize: '0.75rem', color: 'var(--outline)', cursor: 'default' }}>
-                                                                            Move to...
-                                                                        </div>
-                                                                        {collections.filter(c => c.id !== col.id).map(c => (
+                                            <button
+                                                type="button"
+                                                className="app-collection-main"
+                                                onClick={() => handleToggleCollection(col.id)}
+                                                aria-expanded={isExpanded}
+                                            >
+                                                <span className="material-symbols-outlined" aria-hidden="true">
+                                                    {isExpanded ? 'expand_more' : 'chevron_right'}
+                                                </span>
+                                                <span className="app-collection-icon material-symbols-outlined" aria-hidden="true">folder</span>
+                                                <span className="app-collection-title">{col.name}</span>
+                                                <span className="app-collection-count">{col.document_count ?? 0}</span>
+                                            </button>
+
+                                            {isExpanded && (
+                                                <ul className="app-collection-docs" ref={sidebarMenuRef}>
+                                                    {docs?.length > 0 ? (
+                                                        docs.map((doc) => (
+                                                            <li key={doc.name} className="app-collection-doc">
+                                                                <span className="app-collection-doc-name" title={doc.name}>{doc.name}</span>
+                                                                <div className="app-collection-doc-actions">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="app-icon-button"
+                                                                        onClick={() => setSidebarDocMenu(docMenuOpenFor(doc.name) ? null : { colId: col.id, docName: doc.name })}
+                                                                        aria-label={`More actions for ${doc.name}`}
+                                                                        title="More"
+                                                                    >
+                                                                        <span className="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+                                                                    </button>
+                                                                    {docMenuOpenFor(doc.name) && (
+                                                                        <div className="app-collection-menu" onClick={(e) => e.stopPropagation()}>
+                                                                            <div className="app-menu-label">Move to...</div>
+                                                                            {collections.filter((c) => c.id !== col.id).map((c) => (
+                                                                                <button
+                                                                                    key={c.id}
+                                                                                    type="button"
+                                                                                    className="app-menu-item"
+                                                                                    onClick={() => handleSidebarDocMove(doc.name, col.id, c.id)}
+                                                                                >
+                                                                                    <span className="material-symbols-outlined" aria-hidden="true">folder</span>
+                                                                                    {c.name}
+                                                                                </button>
+                                                                            ))}
                                                                             <button
-                                                                                key={c.id}
-                                                                                className="conv-dropdown-item"
-                                                                                onClick={() => handleSidebarDocMove(doc.name, col.id, c.id)}
+                                                                                type="button"
+                                                                                className="app-menu-item app-menu-item-danger"
+                                                                                onClick={() => handleSidebarDocRemove(doc.name, col.id)}
                                                                             >
-                                                                                <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>folder</span>
-                                                                                {c.name}
+                                                                                <span className="material-symbols-outlined" aria-hidden="true">remove_circle</span>
+                                                                                Remove from collection
                                                                             </button>
-                                                                        ))}
-                                                                        <button
-                                                                            className="conv-dropdown-item conv-dropdown-danger"
-                                                                            onClick={() => handleSidebarDocRemove(doc.name, col.id)}
-                                                                        >
-                                                                            <span className="material-symbols-outlined" style={{ fontSize: '1rem' }}>remove_circle</span>
-                                                                            Remove from collection
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <div className="projects-empty" style={{ paddingLeft: '2.5rem' }}>
-                                                        No documents in this collection
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </li>
+                                                        ))
+                                                    ) : (
+                                                        <li className="app-empty-note">No documents in this collection</li>
+                                                    )}
+                                                </ul>
+                                            )}
+                                        </li>
+                                    );
+                                })}
+
                                 {collections.length === 0 && !creatingCollection && (
-                                    <div className="projects-empty">
-                                        No collections yet
-                                    </div>
+                                    <li className="app-empty-note">No collections yet</li>
                                 )}
-                            </div>
+                            </ul>
                         )}
-                    </div>
+                    </section>
                 </div>
 
-                <div className="sidebar-footer">
-                    <button className="nav-tab nav-tab-inactive" onClick={handleLogout}>
-                        <span className="material-symbols-outlined" style={{ fontSize: "1.25rem" }}>logout</span>
-                        <span className="font-label nav-tab-label">Sign Out</span>
+                <div className="app-sidebar-footer">
+                    <button type="button" className="app-signout" onClick={handleLogout}>
+                        <span className="material-symbols-outlined" aria-hidden="true">logout</span>
+                        <span className="app-signout-label">Sign Out</span>
                     </button>
                 </div>
             </nav>
 
-            <main className="main-content">
-                <button 
-                    className="mobile-menu-toggle" 
+            <main className="app-main">
+                <button
+                    type="button"
+                    ref={menuToggleRef}
+                    className="app-menu-toggle"
                     onClick={() => setMobileMenuOpen(true)}
-                    aria-label="Open Menu"
+                    aria-label="Open menu"
+                    aria-expanded={mobileMenuOpen}
+                    aria-controls="app-sidebar"
                 >
-                    <span className="material-symbols-outlined">menu_open</span>
+                    <span className="material-symbols-outlined" aria-hidden="true">menu_open</span>
                 </button>
-                {page === 'chat' && (
-                    <Chat
-                        conversations={conversations}
-                        conversationId={conversationId}
-                        onLoadConversation={handleLoadConversation}
-                        onNewConversation={handleNewConversation}
-                        onRefreshConversations={loadConversations}
-                    />
-                )}
-                {page === 'documents' && <Documents onCollectionsChange={fetchCollections} />}
-                {page === 'search' && <Search />}
-                {page === 'settings' && <Settings onLogout={handleLogout} />}
+
+                <Routes>
+                    <Route path="/" element={<Navigate to="/chat" replace />} />
+                    <Route path="/chat" element={<Chat {...chatProps} conversationId={null} />} />
+                    <Route path="/chat/:conversationId" element={<Chat {...chatProps} conversationId={activeConversationId} />} />
+                    <Route path="/documents" element={<Documents onCollectionsChange={fetchCollections} />} />
+                    <Route path="/search" element={<Search />} />
+                    <Route path="/settings" element={<Settings onLogout={handleLogout} />} />
+                    <Route path="/settings/:section" element={<Settings onLogout={handleLogout} />} />
+                    <Route path="*" element={<Navigate to="/chat" replace />} />
+                </Routes>
             </main>
         </div>
+    );
+}
+
+function App() {
+    return (
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <AppShell />
+        </BrowserRouter>
     );
 }
 

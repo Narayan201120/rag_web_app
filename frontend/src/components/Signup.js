@@ -57,7 +57,7 @@ function Signup({ onSwitch }) {
 
     return (
         <div className="auth-container">
-            <h1>RAG / DOCUMENT AI</h1>
+            <h1>DocuMind</h1>
             <form onSubmit={handleSubmit}>
                 <input
                     type="text"

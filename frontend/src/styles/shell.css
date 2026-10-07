@@ -1,0 +1,964 @@
+/* App shell: the frame that never scrolls.
+ *
+ * Two regions own the viewport. The sidebar holds navigation and lists and
+ * scrolls inside itself. The main column owns the page content, and each page
+ * decides whether it scrolls or not.
+ *
+ * This file holds values only, read from tokens.css. No token name outside
+ * tokens.css appears here, except the two hard measures that define the
+ * layout: the 264px rail and the 767px breakpoint.
+ *
+ * States arrive as plain classes, so the markup stays declarative:
+ *   .is-open     on the overlay and the sidebar
+ *   .is-active   on the current nav link
+ *   .is-online   on the status dot
+ *   .is-expanded on a collection whose documents are showing
+ *
+ * Contents:
+ *   1. Frame
+ *   2. Overlay and drawer
+ *   3. Sidebar header
+ *   4. Primary navigation
+ *   5. Sidebar body and sections
+ *   6. Conversation rows
+ *   7. Collections
+ *   8. Menus
+ *   9. Row actions and icon buttons
+ *   10. Sidebar footer
+ *   11. Main column and menu toggle
+ *   12. Touch pointers
+ *   13. Mobile
+ *   14. Motion
+ */
+
+/* ---------- 1. Frame ---------- */
+
+.app-shell {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* The rail is a flex child, not an overlay, so the document never scrolls
+   sideways. Sticky rather than fixed keeps it in flow for the browser to
+   paint, which is cheaper than compositing a fixed panel on every scroll. */
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex: 0 0 264px;
+  flex-direction: column;
+  width: 264px;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  /* Warm glass over the canvas. Alpha, not opacity, so the panel behind still
+     shows through where the backdrop filter cannot run. */
+  background-color: color-mix(in srgb, var(--color-panel) 74%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.15);
+  backdrop-filter: blur(20px) saturate(1.15);
+  border-right: 1px solid var(--color-border);
+  /* A hairline of accent on the seam, plus the contact shadow from the token
+     scale. Nothing heavier: this is a frame, not a card. */
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--color-primary) 9%, transparent),
+    var(--shadow-sm);
+}
+
+/* ---------- 2. Overlay and drawer ---------- */
+
+/* Desktop has no drawer, so the scrim stays out of the way entirely. It is
+   not rendered on wide screens at all. */
+.app-sidebar-overlay {
+  display: none;
+}
+
+.app-sidebar-close {
+  display: none;
+}
+
+/* ---------- 3. Sidebar header ---------- */
+
+.app-sidebar-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+}
+
+.app-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--color-text-subtle);
+}
+
+.app-status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background-color: var(--color-text-subtle);
+  /* The ring is the whole status read. No pulse, because a dot that never
+     stops moving pulls the eye away from the page. */
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-text-subtle) 18%, transparent);
+}
+
+.app-status-dot.is-online {
+  background-color: var(--color-success);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 20%, transparent);
+}
+
+.app-status-dot.is-offline {
+  background-color: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 22%, transparent);
+}
+
+/* The word beside the dot. Type and color come from .app-status; the only
+   job here is to keep it on one line. */
+.app-status-label {
+  white-space: nowrap;
+}
+
+/* ---------- 4. Primary navigation ---------- */
+
+.app-nav {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: 0 var(--space-3) var(--space-4);
+}
+
+.app-nav-link {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 38px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+  text-align: left;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+/* Quiet by default. Hover only lifts the text one step, so a pointer moving
+   down the rail does not turn the sidebar into stripes. */
+.app-nav-link:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-text) 6%, transparent);
+  color: var(--color-text);
+}
+
+.app-nav-link.is-active,
+.app-nav-link:active,
+.app-nav-link[aria-current="page"] {
+  /* Vermilion ink on a fill lifted one panel step. The inset ring reads as
+     raised without a drop shadow, and nothing here shrinks the row. */
+  background-color: color-mix(in srgb, var(--color-primary) 13%, var(--color-panel-high));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 22%, transparent);
+  color: var(--color-primary);
+}
+
+.app-nav-icon {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  font-size: 1.125rem;
+  line-height: 1;
+  color: currentColor;
+}
+
+.app-nav-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 5. Sidebar body and sections ---------- */
+
+/* The one scrolling region inside the rail. Navigation and the footer stay
+   put while the lists move under them. */
+.app-sidebar-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-height: 0;
+  padding: 0 var(--space-3) var(--space-5);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Absolute menus are clipped here when a row sits near the bottom edge. The
+     trailing padding gives the last row some slack; for anything taller than
+     that, render the menu in a portal instead of deeper. */
+  scroll-padding-block: var(--space-4);
+}
+
+.app-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.app-sidebar-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 26px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+}
+
+.app-sidebar-section-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  /* Plain sentence case. No tracking and no capitals: an uppercase label
+     reads as a heading, and these are list captions, not headings. */
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: var(--leading-normal);
+  color: var(--color-text-subtle);
+}
+
+/* The Collections caption doubles as the collapse button, so it has to earn
+   the hover affordance the icon-only action next to it already has. It grows
+   into the free space of the header row, which is what pushes that action to
+   the far edge. */
+.app-sidebar-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 26px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-subtle);
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.app-sidebar-section-toggle:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+  color: var(--color-text);
+}
+
+/* The caption is a child span with its own color, so the hover color has to
+   be restated on it. :where() around both the hover state and the child keeps
+   this level with .app-sidebar-section-title and later in the file, which is
+   what decides it. */
+.app-sidebar-section-toggle :where(.app-sidebar-section-title) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar-section-toggle:where(:hover) :where(.app-sidebar-section-title) {
+  color: var(--color-text);
+}
+
+.app-sidebar-section-action {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-subtle);
+  font-size: 1rem;
+  line-height: 1;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.app-sidebar-section-action:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+  color: var(--color-text);
+}
+
+.app-empty-note {
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--color-text-subtle);
+}
+
+/* ---------- 6. Conversation rows ---------- */
+
+.app-conversation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Rows own their background so hover and focus-within can share one rule. */
+.app-conversation-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-md);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.app-conversation-item:where(:hover, :focus-within) {
+  background-color: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.app-conversation-main {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+  text-align: left;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.app-conversation-main:where(:hover) {
+  color: var(--color-text);
+}
+
+.app-conversation-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  font-size: 0.9375rem;
+  line-height: 1;
+  color: var(--color-text-subtle);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.app-conversation-item:where(:hover, :focus-within) .app-conversation-icon {
+  color: var(--color-primary);
+}
+
+.app-conversation-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-rename-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-1);
+}
+
+.app-rename-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.app-rename-input::placeholder {
+  color: var(--color-text-subtle);
+}
+
+/* The global focus ring would sit outside the row and clip on the rail edge,
+   so the input draws its own. */
+.app-rename-input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+/* ---------- 7. Collections ---------- */
+
+.app-collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-collection-item {
+  position: relative;
+  border-radius: var(--radius-md);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.app-collection-item:where(:hover, :focus-within) {
+  background-color: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.app-collection-main {
+  display: grid;
+  grid-template-columns: 18px 18px 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  text-align: left;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+/* An open row keeps its fill after the pointer leaves, so the reader can see
+   which list they are inside. */
+.app-collection-item.is-expanded > .app-collection-main {
+  background-color: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.app-collection-item.is-expanded .app-collection-icon {
+  color: var(--color-primary);
+}
+
+.app-collection-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-text-subtle);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.app-collection-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-collection-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 var(--space-2);
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--color-text-subtle);
+  background-color: color-mix(in srgb, var(--color-text) 8%, transparent);
+  border-radius: var(--radius-pill);
+}
+
+/* Documents hang off a rule so the depth reads without extra indentation
+   padding on every row. */
+.app-collection-docs {
+  display: none;
+  margin: var(--space-1) 0 var(--space-1) var(--space-3);
+  padding-left: var(--space-4);
+  border-left: 1px solid var(--color-border);
+}
+
+.app-collection-item.is-expanded > .app-collection-docs {
+  display: block;
+  animation: app-fade-in var(--duration-base) var(--ease-standard) both;
+}
+
+.app-collection-doc {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-sm);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.app-collection-doc:where(:hover, :focus-within) {
+  background-color: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+/* Mono, because a document name is a file name and not a sentence. */
+.app-collection-doc-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+}
+
+.app-collection-doc-actions {
+  flex: 0 0 auto;
+}
+
+/* ---------- 8. Menus ---------- */
+
+/* Anchored to the row that owns it. Right-aligned so the panel hangs into the
+   rail's right padding rather than off the canvas. */
+.app-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: 0;
+  z-index: var(--z-dropdown);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 12rem;
+  padding: var(--space-1);
+  color: var(--color-text);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  animation: app-menu-in var(--duration-base) var(--ease-standard) both;
+}
+
+/* The last rows of the rail open the same way but sit against the bottom
+   edge, where the menu has no room to grow downward. */
+.app-collection-menu {
+  min-width: 13rem;
+}
+
+.app-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  text-align: left;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.app-menu-item:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-panel) 86%, var(--color-text));
+}
+
+/* Pulled inside the item so the ring does not clip against the menu edge. */
+.app-menu-item:focus-visible {
+  outline-offset: -2px;
+}
+
+.app-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.app-menu-item-danger {
+  color: var(--color-error);
+}
+
+.app-menu-item-danger:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-error) 14%, transparent);
+}
+
+/* Stands in for the delete item between the click and the answer, so the menu
+   does not change size under the pointer. */
+.app-confirm-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+}
+
+.app-confirm-row .app-menu-item {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--color-border);
+}
+
+.app-confirm-row .app-menu-item-danger:hover {
+  border-color: color-mix(in srgb, var(--color-error) 45%, transparent);
+}
+
+/* The question the two buttons answer. It grows into the leftover width of
+   the row, which parks the buttons against the trailing edge. No ellipsis:
+   this text is short and fixed, and a clipped question is a broken one. */
+.app-confirm-label {
+  flex: 1 1 auto;
+  font-weight: 500;
+}
+
+/* A caption inside the menu, not an item. It is dimmed and it takes the default
+   cursor, so the pointer does not promise a click that will not happen. */
+.app-menu-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: var(--leading-normal);
+  color: var(--color-text-subtle);
+  cursor: default;
+  white-space: nowrap;
+}
+
+/* ---------- 9. Row actions and icon buttons ---------- */
+
+/* Hidden until the row is hovered or holds focus. Kept in flow at zero
+   opacity so the title never shifts when the buttons appear. */
+.app-conversation-actions,
+.app-collection-doc-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding-right: var(--space-1);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  /* Visibility flips after the fade, not during it. */
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    visibility 0s linear var(--duration-fast);
+}
+
+.app-conversation-item:where(:hover, :focus-within) .app-conversation-actions,
+.app-collection-doc:where(:hover, :focus-within) .app-collection-doc-actions {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+
+.app-icon-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-subtle);
+  font-size: 1rem;
+  line-height: 1;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.app-icon-button:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+  color: var(--color-text);
+}
+
+/* ---------- 10. Sidebar footer ---------- */
+
+.app-sidebar-footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+/* Built like a nav link so leaving the rail feels like leaving the rail. */
+.app-signout {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 38px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: var(--leading-normal);
+  color: var(--color-text-subtle);
+  text-align: left;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.app-signout:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-text) 6%, transparent);
+  color: var(--color-text);
+}
+
+/* The grid track is 1fr, which does not stop the text from painting past its
+   box. Overflow plus ellipsis is what keeps a long locale string inside the
+   button instead of over the icon. */
+.app-signout-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 11. Main column and menu toggle ---------- */
+
+/* Owns the page. Height is fixed so a flex child can shrink and scroll
+   instead of pushing the shell taller than the viewport. */
+.app-main {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-width: 0;
+  background-color: var(--color-bg);
+}
+
+/* Scroll ownership, page by page. Chat keeps its own layout: .chat-area
+   already scrolls inside .app-main, so it is left alone here. */
+.app-main > .documents-container,
+.app-main > .search-container,
+.app-main > .settings-container,
+.app-main > .account-container,
+.app-main > .admin-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Wide screens have a permanent rail, so the toggle has nothing to open. */
+.app-menu-toggle {
+  display: none;
+}
+
+/* ---------- 12. Touch pointers ---------- */
+
+/* A pointer that cannot hover must be able to reach everything the pointer
+   version reveals on demand, so actions stay in the open and grow to a size a
+   fingertip can hit. */
+@media (hover: none) {
+  .app-conversation-actions,
+  .app-collection-doc-actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .app-icon-button,
+  .app-sidebar-section-action {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+  }
+}
+
+/* ---------- 13. Mobile ---------- */
+
+@media (max-width: 767px) {
+  /* clip, not hidden: it stops the off-canvas drawer from widening the page
+     without turning the shell into a scroll container. */
+  .app-shell {
+    overflow-x: clip;
+  }
+
+  .app-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    flex: 0 0 auto;
+    width: min(288px, 84vw);
+    transform: translateX(-100%);
+    visibility: hidden;
+    box-shadow: var(--shadow-lg);
+    /* The slide runs first, the visibility flip a beat later on the way out
+       so the panel does not vanish mid-move. */
+    transition:
+      transform var(--duration-base) var(--ease-standard),
+      visibility 0s linear var(--duration-base);
+  }
+
+  .app-sidebar.is-open {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform var(--duration-base) var(--ease-standard),
+      visibility 0s linear 0s;
+  }
+
+  .app-sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-overlay);
+    background-color: color-mix(in srgb, var(--color-bg) 55%, #000);
+    -webkit-backdrop-filter: blur(2px);
+    backdrop-filter: blur(2px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity var(--duration-base) var(--ease-standard),
+      visibility 0s linear var(--duration-base);
+  }
+
+  .app-sidebar-overlay.is-open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity var(--duration-base) var(--ease-standard),
+      visibility 0s linear 0s;
+  }
+
+  .app-sidebar-close,
+  .app-menu-toggle {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+    font-size: 1.25rem;
+    line-height: 1;
+    transition:
+      background-color var(--duration-fast) var(--ease-standard),
+      color var(--duration-fast) var(--ease-standard);
+  }
+
+  .app-sidebar-close:where(:hover),
+  .app-menu-toggle:where(:hover) {
+    background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+    color: var(--color-text);
+  }
+
+  /* Floats over the page. It reads as a control rather than chrome, so it
+     carries its own panel, edge, and shadow. */
+  .app-menu-toggle {
+    position: absolute;
+    top: var(--space-3);
+    left: var(--space-3);
+    z-index: var(--z-dropdown);
+    background-color: color-mix(in srgb, var(--color-panel) 88%, transparent);
+    border: 1px solid var(--color-border);
+    box-shadow: var(--shadow-md);
+  }
+
+  .app-sidebar-close {
+    margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) 0 0;
+  }
+
+  /* Touch targets. */
+  .app-nav-link,
+  .app-signout {
+    min-height: 44px;
+  }
+
+  .app-conversation-main,
+  .app-collection-main {
+    min-height: 44px;
+  }
+
+  .app-menu-item {
+    min-height: 44px;
+  }
+
+  .app-confirm-row .app-menu-item {
+    min-height: 40px;
+  }
+
+  /* Room for the floating toggle, which sits over the page's top-left. */
+  .app-main > .documents-container,
+  .app-main > .search-container,
+  .app-main > .settings-container,
+  .app-main > .account-container,
+  .app-main > .admin-container {
+    padding-top: var(--space-8);
+  }
+}
+
+/* ---------- 14. Motion ---------- */
+
+/* base.css already flattens every duration. These two entrances still need
+   stopping outright, because a fade that runs for 0.01ms is still a repaint on
+   open. */
+@media (prefers-reduced-motion: reduce) {
+  .app-menu,
+  .app-collection-item.is-expanded > .app-collection-docs {
+    animation: none !important;
+  }
+}
+
+@keyframes app-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes app-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

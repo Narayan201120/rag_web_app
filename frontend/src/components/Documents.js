@@ -459,7 +459,7 @@ function Documents({ onCollectionsChange }) {
                     );
                 })}
                 {documents.length === 0 && (
-                    <p style={{ fontSize: '0.8125rem', color: '#737380', marginTop: '16px', fontFamily: 'JetBrains Mono' }}>
+                    <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-subtle)', marginTop: '16px', fontFamily: 'var(--font-mono)' }}>
                         No documents indexed yet.
                     </p>
                 )}

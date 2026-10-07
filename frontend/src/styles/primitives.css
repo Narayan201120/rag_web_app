@@ -1,0 +1,737 @@
+/* Primitive layer: reusable UI pieces with no layout opinions of their own.
+   Every selector is prefixed with dm- so nothing here can collide with App.css.
+
+   Two rules hold throughout the file:
+   1. Specificity stays low. Single class selectors, states wrapped in :where(),
+      so consumer styles can override a primitive without a specificity fight.
+   2. Optional tokens carry fallbacks. tokens.css and this file are authored
+      side by side, so a missing token must degrade to a sane value instead of
+      collapsing padding, dropping a border, or hiding text. */
+
+/* ---------- Buttons ---------- */
+
+.dm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 0.5rem);
+  min-height: 40px;
+  padding: 0 var(--space-4, 1rem);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 0.5rem);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color var(--duration-fast, 120ms) var(--ease-out, ease),
+    border-color var(--duration-fast, 120ms) var(--ease-out, ease),
+    color var(--duration-fast, 120ms) var(--ease-out, ease),
+    box-shadow var(--duration-fast, 120ms) var(--ease-out, ease),
+    transform var(--duration-fast, 120ms) var(--ease-out, ease);
+}
+
+/* The ring sits outside the fill, so it stays readable on any variant. */
+.dm-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Mixing toward the on-color moves the fill away from the page, so hover
+   darkens on a light theme and lightens on a dark one without a second token. */
+.dm-btn-primary {
+  background-color: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.dm-btn-primary:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 88%, var(--color-on-primary));
+  box-shadow: var(--shadow-glow, 0 10px 26px -14px rgb(0 0 0 / 0.6));
+}
+
+.dm-btn-primary:where(:active):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-primary) 78%, var(--color-on-primary));
+  box-shadow: none;
+  transform: translateY(1px);
+}
+
+.dm-btn-secondary {
+  background-color: var(--color-panel);
+  color: var(--color-text);
+  border-color: var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+}
+
+.dm-btn-secondary:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-panel) 90%, var(--color-text));
+  border-color: var(--color-border-strong);
+}
+
+.dm-btn-secondary:where(:active):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-panel) 84%, var(--color-text));
+  transform: translateY(1px);
+}
+
+.dm-btn-ghost {
+  background-color: transparent;
+  color: var(--color-text);
+}
+
+.dm-btn-ghost:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+}
+
+.dm-btn-ghost:where(:active):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-text) 16%, transparent);
+}
+
+/* Destructive actions never borrow the primary hue. */
+.dm-btn-danger {
+  background-color: var(--color-error);
+  color: var(--color-on-error, #fff);
+}
+
+.dm-btn-danger:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-error) 86%, #000);
+  box-shadow: var(--shadow-glow, 0 10px 26px -14px rgb(0 0 0 / 0.6));
+}
+
+.dm-btn-danger:where(:active):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-error) 74%, #000);
+  box-shadow: none;
+  transform: translateY(1px);
+}
+
+.dm-btn-sm {
+  min-height: 32px;
+  gap: var(--space-1, 0.25rem);
+  padding: 0 var(--space-3, 0.75rem);
+  border-radius: var(--radius-sm, 0.375rem);
+  font-size: 0.8125rem;
+}
+
+.dm-btn-lg {
+  min-height: 48px;
+  padding: 0 var(--space-6, 1.5rem);
+  font-size: 1.0625rem;
+}
+
+/* Square at every size, so an icon and its glyph stay optically centred. */
+.dm-btn-icon {
+  width: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+}
+
+.dm-btn-sm.dm-btn-icon {
+  width: 32px;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.dm-btn-lg.dm-btn-icon {
+  width: 48px;
+  min-width: 48px;
+  min-height: 48px;
+}
+
+/* Last, so it outranks every variant hover at equal specificity. */
+.dm-btn:disabled,
+.dm-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ---------- Form controls ---------- */
+
+.dm-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+}
+
+.dm-label {
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text);
+}
+
+.dm-help {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-text-muted, color-mix(in srgb, var(--color-text) 65%, transparent));
+}
+
+.dm-error-text {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1, 0.25rem);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--color-error);
+}
+
+.dm-input,
+.dm-select,
+.dm-textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border-radius: var(--radius-md, 0.5rem);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  transition:
+    border-color var(--duration-fast, 120ms) var(--ease-out, ease),
+    box-shadow var(--duration-fast, 120ms) var(--ease-out, ease);
+}
+
+.dm-input::placeholder,
+.dm-textarea::placeholder {
+  color: color-mix(in srgb, var(--color-text) 40%, transparent);
+}
+
+.dm-input:focus-visible,
+.dm-select:focus-visible,
+.dm-textarea:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.dm-input:disabled,
+.dm-select:disabled,
+.dm-textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background-color: color-mix(in srgb, var(--color-text) 6%, var(--color-bg));
+}
+
+.dm-input[aria-invalid="true"],
+.dm-select[aria-invalid="true"],
+.dm-textarea[aria-invalid="true"] {
+  border-color: var(--color-error);
+}
+
+.dm-input[aria-invalid="true"]:focus-visible,
+.dm-select[aria-invalid="true"]:focus-visible,
+.dm-textarea[aria-invalid="true"]:focus-visible {
+  border-color: var(--color-error);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-error) 25%, transparent);
+}
+
+/* Native arrow restyles badly across engines, so the select draws its own
+   chevron from two gradients tinted by currentColor. */
+.dm-select {
+  appearance: none;
+  padding-right: var(--space-8, 2rem);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 1.125rem center,
+    right 0.875rem center;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.dm-select option {
+  background-color: var(--color-panel);
+  color: var(--color-text);
+}
+
+.dm-textarea {
+  min-height: 6rem;
+  resize: vertical;
+  font-family: var(--font-reading);
+  line-height: 1.6;
+}
+
+/* ---------- Cards ---------- */
+
+.dm-card {
+  padding: var(--space-4, 1rem);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgb(0 0 0 / 0.06));
+}
+
+.dm-card-interactive {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast, 120ms) var(--ease-out, ease),
+    box-shadow var(--duration-fast, 120ms) var(--ease-out, ease),
+    transform var(--duration-fast, 120ms) var(--ease-out, ease);
+}
+
+.dm-card-interactive:where(:hover):not(:disabled) {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-glow, 0 14px 34px -16px rgb(0 0 0 / 0.55));
+  transform: translateY(-2px);
+}
+
+.dm-card-interactive:where(:active):not(:disabled) {
+  transform: translateY(0);
+}
+
+.dm-card-interactive:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ---------- Modal ---------- */
+
+.dm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4, 1rem);
+  background-color: color-mix(in srgb, var(--color-bg) 35%, #000);
+  backdrop-filter: blur(3px);
+  animation: dm-fade-in var(--duration-base, 200ms) var(--ease-out, ease) both;
+}
+
+/* The overlay is a flex container, which would otherwise beat the UA
+   display: none that the hidden attribute relies on. */
+.dm-modal-overlay[hidden] {
+  display: none;
+}
+
+.dm-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 32rem;
+  max-height: min(85dvh, 44rem);
+  overflow: hidden;
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: var(--shadow-lg, 0 24px 60px -20px rgb(0 0 0 / 0.55));
+  animation: dm-modal-in var(--duration-base, 200ms) var(--ease-out, ease) both;
+}
+
+.dm-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4, 1rem);
+  padding: var(--space-4, 1rem) var(--space-5, 1.25rem);
+  border-bottom: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+}
+
+.dm-modal-body {
+  flex: 1 1 auto;
+  padding: var(--space-5, 1.25rem);
+  overflow-y: auto;
+}
+
+.dm-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-4, 1rem) var(--space-5, 1.25rem);
+  border-top: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+}
+
+/* ---------- Menu ---------- */
+
+.dm-menu {
+  min-width: 12rem;
+  padding: var(--space-1, 0.25rem);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border-radius: var(--radius-md, 0.5rem);
+  box-shadow: var(--shadow-md, 0 14px 34px -14px rgb(0 0 0 / 0.5));
+}
+
+.dm-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--space-3, 0.75rem);
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  color: var(--color-text);
+  text-align: left;
+  text-decoration: none;
+  background-color: transparent;
+  border-radius: var(--radius-sm, 0.375rem);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast, 120ms) var(--ease-out, ease),
+    color var(--duration-fast, 120ms) var(--ease-out, ease);
+}
+
+.dm-menu-item:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-panel) 88%, var(--color-text));
+}
+
+/* Pull the ring inside the item so it does not clip against the menu edge. */
+.dm-menu-item:focus-visible {
+  outline-offset: -2px;
+}
+
+.dm-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dm-menu-item-danger {
+  color: var(--color-error);
+}
+
+.dm-menu-item-danger:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-error) 14%, transparent);
+}
+
+.dm-menu-label {
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, color-mix(in srgb, var(--color-text) 65%, transparent));
+}
+
+/* ---------- Toast ---------- */
+
+.dm-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 0.75rem);
+  width: 100%;
+  max-width: 24rem;
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-md, 0.5rem);
+  box-shadow: var(--shadow-md, 0 14px 34px -14px rgb(0 0 0 / 0.5));
+  font-family: var(--font-ui);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  animation: dm-toast-in var(--duration-base, 200ms) var(--ease-out, ease) both;
+}
+
+.dm-toast-success {
+  border-left-color: var(--color-success, #16a34a);
+}
+
+.dm-toast-error {
+  border-left-color: var(--color-error);
+}
+
+.dm-toast-info {
+  border-left-color: var(--color-primary);
+}
+
+/* ---------- Empty state ---------- */
+
+.dm-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-10, 4rem) var(--space-4, 1rem);
+  text-align: center;
+}
+
+.dm-empty-state-icon {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: var(--space-1, 0.25rem);
+  font-size: 1.5rem;
+  background-color: var(--color-primary-container);
+  color: var(--color-on-primary);
+  border-radius: var(--radius-full, 999px);
+}
+
+.dm-empty-state-title {
+  font-family: var(--font-ui);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.dm-empty-state-body {
+  max-width: 34rem;
+  color: var(--color-text-muted, color-mix(in srgb, var(--color-text) 65%, transparent));
+}
+
+.dm-empty-state-action {
+  margin-top: var(--space-2, 0.5rem);
+}
+
+/* ---------- Skeleton ---------- */
+
+.dm-skeleton {
+  border-radius: var(--radius-sm, 0.375rem);
+  background-color: color-mix(in srgb, var(--color-text) 10%, transparent);
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--color-text) 12%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: dm-shimmer 1.6s var(--ease-out, ease) infinite;
+}
+
+/* ---------- Badge ---------- */
+
+.dm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  padding: 0.125rem var(--space-2, 0.5rem);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+  background-color: color-mix(in srgb, var(--color-text) 12%, transparent);
+  color: var(--color-text);
+  border-radius: var(--radius-full, 999px);
+}
+
+.dm-badge-success {
+  background-color: color-mix(in srgb, var(--color-success, #16a34a) 16%, transparent);
+  color: var(--color-success, #16a34a);
+}
+
+.dm-badge-warning {
+  background-color: color-mix(in srgb, var(--color-warning, #d97706) 16%, transparent);
+  color: var(--color-warning, #d97706);
+}
+
+.dm-badge-error {
+  background-color: color-mix(in srgb, var(--color-error) 16%, transparent);
+  color: var(--color-error);
+}
+
+.dm-badge-neutral {
+  background-color: color-mix(in srgb, var(--color-text) 12%, transparent);
+  color: var(--color-text-muted, color-mix(in srgb, var(--color-text) 65%, transparent));
+}
+
+/* ---------- Tooltip ---------- */
+
+.dm-tooltip {
+  position: relative;
+}
+
+/* The label is the pseudo-element, so callers set data-tooltip and nothing
+   else. data-tooltip-side moves it to top, bottom, left, or right. */
+.dm-tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  z-index: 1100;
+  width: max-content;
+  max-width: 18rem;
+  padding: var(--space-1, 0.25rem) var(--space-2, 0.5rem);
+  font-family: var(--font-ui);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-text);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border-radius: var(--radius-sm, 0.375rem);
+  box-shadow: var(--shadow-md, 0 14px 34px -14px rgb(0 0 0 / 0.5));
+  transform: translateX(-50%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  /* visibility flips after the fade out, not before it. */
+  transition:
+    opacity var(--duration-fast, 120ms) var(--ease-out, ease),
+    visibility 0s linear var(--duration-fast, 120ms);
+}
+
+.dm-tooltip:where(:hover, :focus-visible)::after {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast, 120ms) var(--ease-out, ease),
+    visibility 0s linear 0s;
+}
+
+.dm-tooltip[data-tooltip-side="top"]::after {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+}
+
+.dm-tooltip[data-tooltip-side="left"]::after {
+  top: 50%;
+  left: auto;
+  right: calc(100% + 0.5rem);
+  transform: translateY(-50%);
+}
+
+.dm-tooltip[data-tooltip-side="right"]::after {
+  top: 50%;
+  left: calc(100% + 0.5rem);
+  transform: translateY(-50%);
+}
+
+/* ---------- Divider ---------- */
+
+.dm-divider {
+  height: 1px;
+  margin: var(--space-4, 1rem) 0;
+  background-color: var(--color-border, color-mix(in srgb, var(--color-border-strong) 55%, transparent));
+  border: 0;
+}
+
+.dm-divider-vertical {
+  width: 1px;
+  height: auto;
+  align-self: stretch;
+  margin: 0 var(--space-2, 0.5rem);
+}
+
+/* ---------- Spinner ---------- */
+
+.dm-spinner {
+  display: inline-block;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 2px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+  border-top-color: var(--color-primary);
+  border-radius: var(--radius-full, 999px);
+  animation: dm-spin 700ms linear infinite;
+}
+
+.dm-spinner-lg {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-width: 3px;
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes dm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dm-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes dm-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dm-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes dm-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+/* base.css already flattens durations globally. These rules stop the movement
+   itself: a sweeping sheen reads as noise, and a lifted card is a jump.
+   !important is needed to beat the global override in base.css. */
+@media (prefers-reduced-motion: reduce) {
+  .dm-skeleton {
+    animation: none !important;
+    background-image: none;
+    background-color: color-mix(in srgb, var(--color-text) 12%, transparent);
+  }
+
+  .dm-modal-overlay,
+  .dm-modal,
+  .dm-toast {
+    animation: none !important;
+  }
+
+  .dm-card-interactive:where(:hover):not(:disabled),
+  .dm-card-interactive:where(:active):not(:disabled) {
+    transform: none;
+  }
+
+  .dm-btn:where(:active):not(:disabled),
+  .dm-btn-primary:where(:active):not(:disabled),
+  .dm-btn-secondary:where(:active):not(:disabled),
+  .dm-btn-danger:where(:active):not(:disabled) {
+    transform: none;
+  }
+
+  /* A spinner still has to read as busy, so it pulses instead of rotating. */
+  .dm-spinner {
+    animation: dm-pulse 1.4s ease-in-out infinite !important;
+    border-top-color: color-mix(in srgb, var(--color-primary) 28%, transparent);
+  }
+}
+
+@keyframes dm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

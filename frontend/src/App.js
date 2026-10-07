@@ -326,7 +326,7 @@ function App() {
                                     </div>
                                 ))
                             ) : (
-                                <div style={{ paddingLeft: '1rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--outline)', fontFamily: "'Manrope', sans-serif" }}>
+                                <div style={{ paddingLeft: '1rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--outline)', fontFamily: 'var(--font-ui)' }}>
                                     No recent chats
                                 </div>
                             )}

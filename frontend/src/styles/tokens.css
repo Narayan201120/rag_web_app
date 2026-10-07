@@ -1,0 +1,177 @@
+/* DocuMind design tokens: the "Marginalia" direction.
+ *
+ * The look is a warm, low-lit desk. Paper-dark browns for every surface, a
+ * chalk-white reading ink, and one vermilion accent that only appears where a
+ * person can act on something. Shadows stay soft and warm, never black and
+ * heavy.
+ *
+ * This file holds values only. base.css owns element defaults, primitives.css
+ * owns components.
+ *
+ * Contents:
+ *   1. Color
+ *   2. Typography
+ *   3. Spacing
+ *   4. Radius
+ *   5. Shadow
+ *   6. Motion
+ *   7. Z-index
+ *   8. Legacy aliases (Material-style names still used by App.css)
+ */
+
+:root {
+  /* ---------- 1. Color ---------- */
+
+  /* Canvas and surfaces. Each step is a little more lifted than the last, so
+     nesting a panel inside a panel still reads as depth. */
+  --color-bg: #121110;
+  --color-bg-raised: #171614;
+  --color-panel: #1C1A18;
+  --color-panel-high: #242221;
+  --color-panel-highest: #2A2725;
+
+  /* Text. Muted for body copy, subtle for labels and metadata. */
+  --color-text: #E8E2D8;
+  --color-text-muted: #B8AFA6;
+  --color-text-subtle: #A89A91;
+
+  /* Borders. The weak one draws separators, the strong one draws focus and
+     input edges. */
+  --color-border: #332F2B;
+  --color-border-strong: #5A4F4A;
+
+  /* Accent. Vermilion marks actions and nothing else. */
+  --color-primary: #E8735C;
+  --color-primary-strong: #D9553F;
+  --color-primary-container: #93000A;
+  --color-on-primary: #FFE3DD;
+
+  /* Status. */
+  --color-success: #5E9B8C;
+  --color-warning: #C99A3E;
+  --color-error: #EF4444;
+  --color-on-error: #1A0503;
+
+  /* ---------- 2. Typography ---------- */
+
+  /* UI for chrome, reading for anything a person is meant to read closely,
+     mono for code and file names. The fallbacks are the OS defaults that most
+     closely match each face. */
+  --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-reading: 'Newsreader', Georgia, serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  /* Size scale. Small steps at the bottom so dense UI text stays legible,
+     wider steps at the top where headings need presence. */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+
+  /* Line height. Reading text gets the most air, headings the least. */
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---------- 3. Spacing ---------- */
+
+  /* 4px base. Steps 1 to 4 are exact multiples; 5 and up double because
+     layout gaps need range, not precision. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --space-9: 4rem;
+  --space-10: 5rem;
+  --space-11: 6rem;
+  --space-12: 8rem;
+
+  /* ---------- 4. Radius ---------- */
+
+  /* Corners stay tight. Paper does not have big rounded corners. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* ---------- 5. Shadow ---------- */
+
+  /* Two-part shadows: a tight contact shadow for the lift, then a wide warm
+     spread for the glow. The warm layer is what keeps the dark UI from
+     looking like a void. */
+  --shadow-sm: 0 1px 2px rgba(18, 17, 16, 0.55);
+  --shadow-md:
+    0 2px 6px rgba(18, 17, 16, 0.4),
+    0 8px 20px -8px rgba(232, 115, 92, 0.16);
+  --shadow-lg:
+    0 12px 32px -10px rgba(0, 0, 0, 0.6),
+    0 2px 8px -4px rgba(232, 115, 92, 0.14);
+  /* Reserve for one element on screen: the composer. A ring plus a short
+     halo, not a lamp. */
+  --shadow-glow:
+    0 0 0 1px rgba(232, 115, 92, 0.24),
+    0 0 18px -6px rgba(232, 115, 92, 0.34);
+
+  /* ---------- 6. Motion ---------- */
+
+  /* Short for hover and focus, long for panels entering. Keep transitions
+     under 320ms so the UI never feels like it is waiting on you. */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---------- 7. Z-index ---------- */
+
+  /* Every layer sits above the hard-coded 200 that App.css uses for its
+     confirm overlay, so the new components always land on top of legacy
+     markup instead of under it. */
+  --z-dropdown: 400;
+  --z-overlay: 900;
+  --z-modal: 1000;
+  --z-toast: 1100;
+
+  /* ---------- 8. Legacy aliases ---------- */
+
+  /* App.css still speaks the Material 3 vocabulary from the previous theme.
+     Each of these points at the Marginalia value with the same job, so the
+     old stylesheet keeps working while it is being rewritten. Delete this
+     block once nothing reads these names. */
+
+  --surface: #121110;
+  --surface-container-lowest: #121110;
+  --surface-container-low: #171614;
+  --surface-container: #1C1A18;
+  --surface-container-high: #242221;
+  --surface-container-highest: #2A2725;
+  --on-surface: #E8E2D8;
+  --on-surface-variant: #B8AFA6;
+  --outline: #A89A91;
+  --outline-variant: #4A403B;
+  --primary: #E8735C;
+  --primary-container: #93000A;
+  --on-primary-container: #FFE3DD;
+  --secondary-container: #3A2E2C;
+  --error: #EF4444;
+
+  /* Stray names used inline in Settings.js. They were never defined, so those
+     style props were being dropped by the parser. */
+  --line: #332F2B;
+  --ink: #E8E2D8;
+  --surface-2: #1C1A18;
+
+  /* Naming variants of tokens above. primitives.css was written against
+     --ease-out and --radius-full; both are the same values. */
+  --ease-out: var(--ease-standard);
+  --radius-full: var(--radius-pill);
+}

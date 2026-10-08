@@ -1,0 +1,16 @@
+{
+  "services": {
+    "rag-web-app-backend": {
+      "root": "backend"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "rag-web-app-backend"
+      }
+    }
+  ]
+}

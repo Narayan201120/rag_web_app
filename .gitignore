@@ -5,6 +5,9 @@ venv/
 # ===== Private dev tracking =====
 PROGRESS.md
 
+# ===== Agent tooling =====
+.serena/
+
 # ===== Python =====
 __pycache__/
 *.py[cod]

@@ -274,6 +274,43 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
         self.assertEqual(body.get("username"), self.user.username)
         self.assertEqual(body.get("email"), self.user.email)
 
+    def test_account_endpoint_returns_is_staff_false_for_regular_user(self):
+        self.api_client.force_authenticate(user=self.user)
+        response = self.api_client.get("/api/account/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("username", body)
+        self.assertIn("email", body)
+        self.assertEqual(body.get("is_staff"), False)
+
+    def test_account_endpoint_returns_is_staff_true_for_staff_user(self):
+        staff_user = User.objects.create_user(
+            username="staff_account_user",
+            email="staff_account_user@example.com",
+            password="pass12345",
+            is_staff=True,
+        )
+        self.api_client.force_authenticate(user=staff_user)
+        response = self.api_client.get("/api/account/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("is_staff"), True)
+
+    def test_account_endpoint_returns_is_staff_true_for_superuser(self):
+        superuser = User.objects.create_superuser(
+            username="super_account_user",
+            email="super_account_user@example.com",
+            password="pass12345",
+        )
+        superuser.is_staff = False
+        superuser.save()
+        self.api_client.force_authenticate(user=superuser)
+        response = self.api_client.get("/api/account/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json().get("is_staff"), True)
+
     def test_forgot_password_returns_generic_success_message(self):
         existing_response = self.api_client.post(
             "/api/forgot-password/",

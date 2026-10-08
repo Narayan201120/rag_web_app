@@ -1118,6 +1118,7 @@ class AccountView(APIView):
         return Response({
             'username': request.user.username,
             'email': request.user.email,
+            'is_staff': request.user.is_staff or request.user.is_superuser,
         }, status=status.HTTP_200_OK)
 
 """ FORGOT PASSWORD VIEW """

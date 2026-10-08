@@ -1,0 +1,393 @@
+/* Settings page.
+ *
+ * Same contract as documents.css: the set- prefix owns this sheet, tokens
+ * only, primitives handle the controls. The page frame mirrors .doc-page so
+ * the two app pages sit on the same canvas.
+ *
+ * Contents:
+ *   1. Page frame
+ *   2. Tab rail
+ *   3. Panel and notices
+ *   4. Cards, definition rows, tables
+ *   5. Provider card pieces
+ *   6. Modal title and delete dialog
+ *   7. Skeletons
+ *   8. Narrow screens and reduced motion
+ */
+
+/* ---------- 1. Page frame ---------- */
+
+.set-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 1.5rem);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--space-7, 2.5rem) var(--space-5, 1.5rem) var(--space-10, 4rem);
+}
+
+.set-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+}
+
+.set-page-title {
+  font-family: var(--font-reading, Georgia, serif);
+  font-size: var(--text-3xl, 1.875rem);
+  font-weight: 500;
+  line-height: var(--leading-tight, 1.15);
+  letter-spacing: -0.015em;
+  color: var(--color-text, #e8e2d8);
+}
+
+.set-page-subtitle {
+  max-width: 44rem;
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.set-body {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: var(--space-6, 2rem);
+  align-items: start;
+}
+
+/* ---------- 2. Tab rail ---------- */
+
+.set-rail {
+  position: sticky;
+  top: var(--space-4, 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  min-height: 16rem;
+}
+
+.set-tab {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--space-3, 0.75rem);
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 500;
+  color: var(--color-text-muted, #b8afa6);
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 0.5rem);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+
+.set-tab:where(:hover) {
+  color: var(--color-text, #e8e2d8);
+  background-color: color-mix(in srgb, var(--color-text, #e8e2d8) 8%, transparent);
+}
+
+.set-tab:focus-visible {
+  outline: 2px solid var(--color-primary, #e8735c);
+  outline-offset: 2px;
+}
+
+.set-tab.is-active {
+  color: var(--color-text, #e8e2d8);
+  background-color: var(--color-panel, #1c1a18);
+  border-color: var(--color-border, #332f2b);
+}
+
+.set-rail-spacer {
+  flex: 1 1 auto;
+}
+
+.set-tab-logout {
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.set-tab-logout:where(:hover) {
+  color: var(--color-error, #ef4444);
+}
+
+/* ---------- 3. Panel and notices ---------- */
+
+.set-panel-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+  min-width: 0;
+}
+
+.set-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+.set-panel-title {
+  font-family: var(--font-reading, Georgia, serif);
+  font-size: var(--text-2xl, 1.5rem);
+  font-weight: 500;
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-text, #e8e2d8);
+}
+
+.set-notice {
+  /* dm-toast supplies the chrome; this keeps the text and dismiss on one line. */
+  align-items: center;
+}
+
+.set-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.set-notice-dismiss {
+  flex-shrink: 0;
+  margin: -0.25rem -0.375rem -0.25rem 0;
+  color: var(--color-text-subtle, #a89a91);
+}
+
+/* ---------- 4. Cards, definition rows, tables ---------- */
+
+.set-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+.set-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4, 1rem);
+}
+
+.set-card-title {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 600;
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-text, #e8e2d8);
+}
+
+.set-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+}
+
+.set-danger-card {
+  border-color: color-mix(in srgb, var(--color-error, #ef4444) 35%, var(--color-border, #332f2b));
+}
+
+.set-subheading {
+  margin-top: var(--space-2, 0.5rem);
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.set-dl {
+  display: flex;
+  flex-direction: column;
+}
+
+.set-dl-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-4, 1rem);
+  padding: var(--space-2, 0.5rem) 0;
+  border-bottom: 1px solid var(--color-border, #332f2b);
+}
+
+.set-dl-row:last-child {
+  border-bottom: 0;
+}
+
+.set-dl-term {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.set-dl-value {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #e8e2d8);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.set-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.set-table th,
+.set-table td {
+  padding: var(--space-2, 0.5rem) var(--space-2, 0.5rem);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border, #332f2b);
+}
+
+.set-table th {
+  font-weight: 600;
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.set-table td:last-child,
+.set-table th:last-child {
+  text-align: right;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+.set-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.set-error-banner {
+  /* dm-error-text shapes the text; the banner adds the surface and ring. */
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border: 1px solid color-mix(in srgb, var(--color-error, #ef4444) 40%, var(--color-border, #332f2b));
+  border-radius: var(--radius-md, 0.5rem);
+  background-color: color-mix(in srgb, var(--color-error, #ef4444) 8%, transparent);
+}
+
+/* ---------- 5. Provider card pieces ---------- */
+
+.set-current-key {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.set-key-value {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #e8e2d8);
+}
+
+.set-key-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.set-key-input .dm-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.set-status-line {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+}
+
+.set-status-line--success {
+  color: var(--color-success, #5e9b8c);
+}
+
+.set-status-line--error {
+  color: var(--color-error, #ef4444);
+}
+
+/* ---------- 6. Modal title and delete dialog ---------- */
+
+.set-modal-title {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 600;
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-text, #e8e2d8);
+}
+
+.set-delete-dialog {
+  max-width: 26rem;
+}
+
+.set-delete-consequence {
+  margin-bottom: var(--space-4, 1rem);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.set-delete-dialog .dm-btn-danger .dm-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-width: 2px;
+  border-top-color: var(--color-on-error, #1a0503);
+}
+
+/* ---------- 7. Skeletons ---------- */
+
+.set-skeleton-heading {
+  width: 40%;
+  height: 1.25rem;
+  margin-bottom: var(--space-3, 0.75rem);
+}
+
+.set-skeleton-line {
+  height: 0.875rem;
+  margin-top: var(--space-2, 0.5rem);
+}
+
+.set-skeleton-line:nth-of-type(3) {
+  width: 70%;
+}
+
+/* ---------- 8. Narrow screens and reduced motion ---------- */
+
+@media (max-width: 767px) {
+  .set-page {
+    padding: var(--space-5, 1.5rem) var(--space-4, 1rem) var(--space-9, 4rem);
+  }
+
+  .set-body {
+    grid-template-columns: 1fr;
+  }
+
+  .set-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    min-height: 0;
+  }
+
+  .set-rail-spacer {
+    display: none;
+  }
+
+  .set-tab {
+    min-height: 36px;
+  }
+
+  .set-delete-dialog {
+    max-width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-tab {
+    transition: none;
+  }
+}

@@ -29,8 +29,21 @@ const NAV_ITEMS = [
     { to: '/settings', label: 'Settings', icon: 'settings' }
 ];
 
+// Same selector DocumentPreview uses for its dialog. Duplicated on purpose: the
+// confirm lives in this file and importing it would mean editing that one.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+// Focus sentinel for a collection id that no longer exists.
+const SECTION_FOCUS = '__section__';
+
 function isAuthPath(pathname) {
     return AUTH_PATHS.includes(pathname);
+}
+
+// Collection names are compared the way a person reads them, so "Notes" and
+// "notes " collide before the request goes out.
+function normalizeCollectionName(name) {
+    return String(name || '').trim().toLowerCase();
 }
 
 function conversationTitle(conv) {
@@ -59,11 +72,24 @@ function AppShell() {
     const [expandedColId, setExpandedColId] = useState(null);
     const [collectionDocs, setCollectionDocs] = useState({});
     const [sidebarDocMenu, setSidebarDocMenu] = useState(null);
+    const [collectionMenuId, setCollectionMenuId] = useState(null);
+    const [renamingCollectionId, setRenamingCollectionId] = useState(null);
+    const [renamingCollectionName, setRenamingCollectionName] = useState('');
+    const [collectionRenameError, setCollectionRenameError] = useState('');
+    const [deletingCollectionId, setDeletingCollectionId] = useState(null);
+    const [collectionDeleteBusy, setCollectionDeleteBusy] = useState(false);
+    const [focusCollectionTarget, setFocusCollectionTarget] = useState(null);
 
     const collectionInputRef = useRef(null);
     const menuRef = useRef(null);
     const renameInputRef = useRef(null);
     const sidebarMenuRef = useRef(null);
+    const collectionMenuRef = useRef(null);
+    const collectionRenameRef = useRef(null);
+    const collectionConfirmRef = useRef(null);
+    const collectionConfirmCancelRef = useRef(null);
+    const collectionActionRefs = useRef({});
+    const collectionsSectionActionRef = useRef(null);
     const menuToggleRef = useRef(null);
     const sidebarCloseRef = useRef(null);
     const mobileMenuWasOpen = useRef(false);
@@ -122,6 +148,37 @@ function AppShell() {
         }
     }, [creatingCollection]);
 
+    // Rename input takes the whole row, so select the old name to type over it.
+    useEffect(() => {
+        if (renamingCollectionId === null) return;
+        collectionRenameRef.current?.focus();
+        collectionRenameRef.current?.select();
+    }, [renamingCollectionId]);
+
+    // Focus lands on Cancel, the safe answer, so a stray Enter cannot delete.
+    useEffect(() => {
+        if (deletingCollectionId === null) return;
+        collectionConfirmCancelRef.current?.focus();
+    }, [deletingCollectionId]);
+
+    // Focus goes back where it came from. Deferred to an effect because the row
+    // button only exists again after the dialog unmounts. A deleted row never
+    // comes back, so that case names the section action instead.
+    useEffect(() => {
+        if (focusCollectionTarget === null) return;
+        if (focusCollectionTarget === SECTION_FOCUS) {
+            collectionsSectionActionRef.current?.focus();
+        } else {
+            const toggle = collectionActionRefs.current[focusCollectionTarget];
+            if (toggle && document.contains(toggle)) {
+                toggle.focus();
+            } else {
+                collectionsSectionActionRef.current?.focus();
+            }
+        }
+        setFocusCollectionTarget(null);
+    }, [focusCollectionTarget]);
+
     useEffect(() => {
         const handleClickOutside = (e) => {
             if (menuRef.current && !menuRef.current.contains(e.target)) {
@@ -129,6 +186,9 @@ function AppShell() {
             }
             if (sidebarMenuRef.current && !sidebarMenuRef.current.contains(e.target)) {
                 setSidebarDocMenu(null);
+            }
+            if (collectionMenuRef.current && !collectionMenuRef.current.contains(e.target)) {
+                setCollectionMenuId(null);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -171,12 +231,20 @@ function AppShell() {
         setDeleteConfirmId(null);
         setRenamingConvId(null);
         setMobileMenuOpen(false);
+        setCollectionMenuId(null);
+        setRenamingCollectionId(null);
+        setCollectionRenameError('');
+        setDeletingCollectionId(null);
+        setCollectionDeleteBusy(false);
     };
 
     const handleNavClick = () => {
         setMobileMenuOpen(false);
         setMenuOpenConvId(null);
         setSidebarDocMenu(null);
+        setCollectionMenuId(null);
+        setRenamingCollectionId(null);
+        setCollectionRenameError('');
     };
 
     const handleLogin = () => {
@@ -314,6 +382,141 @@ function AppShell() {
             console.error('Remove failed:', err);
         }
         setSidebarDocMenu(null);
+    };
+
+    // One menu at a time across the whole sidebar, so the two rail menus cannot
+    // sit open on top of each other.
+    const openCollectionMenu = (colId) => {
+        setCollectionMenuId(prev => (prev === colId ? null : colId));
+        setRenamingCollectionId(null);
+        setCollectionRenameError('');
+        setSidebarDocMenu(null);
+    };
+
+    const openSidebarDocMenu = (next) => {
+        setSidebarDocMenu(next);
+        setCollectionMenuId(null);
+    };
+
+    // Tapping the row itself is also a dismissal, so the row menu does not hang
+    // around while the documents expand.
+    const toggleCollectionRow = (colId) => {
+        setCollectionMenuId(null);
+        handleToggleCollection(colId);
+    };
+
+    const startCollectionRename = (col) => {
+        setCollectionMenuId(null);
+        setSidebarDocMenu(null);
+        setRenamingCollectionId(col.id);
+        setRenamingCollectionName(col.name || '');
+        setCollectionRenameError('');
+    };
+
+    const cancelCollectionRename = () => {
+        const id = renamingCollectionId;
+        setRenamingCollectionId(null);
+        setCollectionRenameError('');
+        if (id !== null) setFocusCollectionTarget(id);
+    };
+
+    const handleRenameCollection = async (colId) => {
+        // Blur and submit can both land here, and a row that already left rename
+        // mode must not write its stale name into the list.
+        if (renamingCollectionId !== colId) return;
+        const name = renamingCollectionName.trim();
+        if (!name) {
+            setCollectionRenameError('Name cannot be empty.');
+            collectionRenameRef.current?.focus();
+            return;
+        }
+        // Duplicates are checked here so a known clash never costs a round trip.
+        const taken = collections.some(
+            (c) => c.id !== colId && normalizeCollectionName(c.name) === normalizeCollectionName(name)
+        );
+        if (taken) {
+            setCollectionRenameError(`"${name}" is already taken.`);
+            collectionRenameRef.current?.focus();
+            collectionRenameRef.current?.select();
+            return;
+        }
+        try {
+            const res = await requestWithRefresh((headers) => apiClient.patch(`/collections/${colId}/`, { name }, { headers }));
+            const nextName = res?.data?.name || name;
+            setCollections(prev => prev.map((c) => (c.id === colId
+                ? { ...c, ...res?.data, name: nextName }
+                : c)));
+            setRenamingCollectionId(null);
+            setCollectionRenameError('');
+            setFocusCollectionTarget(colId);
+        } catch (err) {
+            console.error('Rename collection failed:', err);
+        }
+    };
+
+    const openCollectionDelete = (col) => {
+        setCollectionMenuId(null);
+        setSidebarDocMenu(null);
+        setRenamingCollectionId(null);
+        setCollectionRenameError('');
+        setDeletingCollectionId(col.id);
+        setCollectionDeleteBusy(false);
+    };
+
+    const closeCollectionDelete = () => {
+        const id = deletingCollectionId;
+        setDeletingCollectionId(null);
+        setCollectionDeleteBusy(false);
+        setCollectionMenuId(null);
+        if (id !== null) setFocusCollectionTarget(id);
+    };
+
+    const handleDeleteCollection = async (colId) => {
+        try {
+            await requestWithRefresh((headers) => apiClient.delete(`/collections/${colId}/`, { headers }));
+            // The documents outlive the collection, so only the cached doc list
+            // for this id goes.
+            setCollectionDocs(prev => {
+                if (!(colId in prev)) return prev;
+                const next = { ...prev };
+                delete next[colId];
+                return next;
+            });
+            if (expandedColId === colId) setExpandedColId(null);
+            setDeletingCollectionId(null);
+            setCollectionDeleteBusy(false);
+            // The row is about to disappear, so focus names the section action.
+            setFocusCollectionTarget(SECTION_FOCUS);
+            fetchCollections();
+        } catch (err) {
+            console.error('Delete collection failed:', err);
+            setCollectionDeleteBusy(false);
+        }
+    };
+
+    // Escape and Tab stay inside the dialog while it is open.
+    const handleCollectionConfirmKeys = (e) => {
+        if (e.key === 'Escape') {
+            e.stopPropagation();
+            closeCollectionDelete();
+            return;
+        }
+        if (e.key !== 'Tab') return;
+        const nodes = collectionConfirmRef.current?.querySelectorAll(FOCUSABLE);
+        if (!nodes || nodes.length === 0) {
+            e.preventDefault();
+            return;
+        }
+        const first = nodes[0];
+        const last = nodes[nodes.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+            e.preventDefault();
+            last.focus();
+        } else if (!e.shiftKey && active === last) {
+            e.preventDefault();
+            first.focus();
+        }
     };
 
     // ---- Auth gate -------------------------------------------------------
@@ -560,6 +763,7 @@ function AppShell() {
                             </button>
                             <button
                                 type="button"
+                                ref={collectionsSectionActionRef}
                                 className="app-sidebar-section-action"
                                 onClick={() => {
                                     setCollectionsOpen(true);
@@ -573,7 +777,7 @@ function AppShell() {
                         </div>
 
                         {collectionsOpen && (
-                            <ul className="app-collection-list">
+                            <ul className="app-collection-list" ref={collectionMenuRef}>
                                 {creatingCollection && (
                                     <li className="app-collection-item">
                                         <form
@@ -608,24 +812,107 @@ function AppShell() {
                                     const docMenuOpenFor = (docName) => (
                                         sidebarDocMenu?.docName === docName && sidebarDocMenu?.colId === col.id
                                     );
+                                    const isRenaming = renamingCollectionId === col.id;
+                                    const menuOpen = collectionMenuId === col.id;
+                                    const docCount = col.document_count ?? 0;
                                     return (
                                         <li
                                             key={col.id}
                                             className={`app-collection-item${isExpanded ? ' is-expanded' : ''}`}
                                         >
-                                            <button
-                                                type="button"
-                                                className="app-collection-main"
-                                                onClick={() => handleToggleCollection(col.id)}
-                                                aria-expanded={isExpanded}
-                                            >
-                                                <span className="material-symbols-outlined" aria-hidden="true">
-                                                    {isExpanded ? 'expand_more' : 'chevron_right'}
-                                                </span>
-                                                <span className="app-collection-icon material-symbols-outlined" aria-hidden="true">folder</span>
-                                                <span className="app-collection-title">{col.name}</span>
-                                                <span className="app-collection-count">{col.document_count ?? 0}</span>
-                                            </button>
+                                            {isRenaming ? (
+                                                <form
+                                                    className="app-collection-rename"
+                                                    onSubmit={(e) => {
+                                                        e.preventDefault();
+                                                        handleRenameCollection(col.id);
+                                                    }}
+                                                >
+                                                    <input
+                                                        ref={collectionRenameRef}
+                                                        className="app-rename-input app-collection-rename-input"
+                                                        aria-label={`Rename ${col.name}`}
+                                                        value={renamingCollectionName}
+                                                        onChange={(e) => {
+                                                            setRenamingCollectionName(e.target.value);
+                                                            if (collectionRenameError) setCollectionRenameError('');
+                                                        }}
+                                                        onBlur={() => handleRenameCollection(col.id)}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Escape') {
+                                                                e.preventDefault();
+                                                                cancelCollectionRename();
+                                                            }
+                                                        }}
+                                                    />
+                                                    {collectionRenameError && (
+                                                        <span className="app-collection-rename-error" role="alert">
+                                                            {collectionRenameError}
+                                                        </span>
+                                                    )}
+                                                </form>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        type="button"
+                                                        className="app-collection-main"
+                                                        onClick={() => toggleCollectionRow(col.id)}
+                                                        aria-expanded={isExpanded}
+                                                        ref={(node) => {
+                                                            if (node) collectionActionRefs.current[col.id] = node;
+                                                            else delete collectionActionRefs.current[col.id];
+                                                        }}
+                                                    >
+                                                        <span className="material-symbols-outlined" aria-hidden="true">
+                                                            {isExpanded ? 'expand_more' : 'chevron_right'}
+                                                        </span>
+                                                        <span className="app-collection-icon material-symbols-outlined" aria-hidden="true">folder</span>
+                                                        <span className="app-collection-title">{col.name}</span>
+                                                        <span className="app-collection-count">{docCount}</span>
+                                                    </button>
+
+                                                    <div className="app-collection-actions">
+                                                        <button
+                                                            type="button"
+                                                            className="app-icon-button"
+                                                            onClick={() => openCollectionMenu(col.id)}
+                                                            aria-label={`More actions for ${col.name}`}
+                                                            aria-haspopup="menu"
+                                                            aria-expanded={menuOpen}
+                                                            title="More"
+                                                        >
+                                                            <span className="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+                                                        </button>
+                                                    </div>
+
+                                                    {menuOpen && (
+                                                        <div
+                                                            className="app-menu app-collection-row-menu"
+                                                            role="menu"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <button
+                                                                type="button"
+                                                                role="menuitem"
+                                                                className="app-menu-item"
+                                                                onClick={() => startCollectionRename(col)}
+                                                            >
+                                                                <span className="material-symbols-outlined" aria-hidden="true">edit</span>
+                                                                Rename
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                role="menuitem"
+                                                                className="app-menu-item app-menu-item-danger"
+                                                                onClick={() => openCollectionDelete(col)}
+                                                            >
+                                                                <span className="material-symbols-outlined" aria-hidden="true">delete</span>
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
 
                                             {isExpanded && (
                                                 <ul className="app-collection-docs" ref={sidebarMenuRef}>
@@ -637,7 +924,7 @@ function AppShell() {
                                                                     <button
                                                                         type="button"
                                                                         className="app-icon-button"
-                                                                        onClick={() => setSidebarDocMenu(docMenuOpenFor(doc.name) ? null : { colId: col.id, docName: doc.name })}
+                                                                        onClick={() => openSidebarDocMenu(docMenuOpenFor(doc.name) ? null : { colId: col.id, docName: doc.name })}
                                                                         aria-label={`More actions for ${doc.name}`}
                                                                         title="More"
                                                                     >
@@ -719,6 +1006,65 @@ function AppShell() {
                     <Route path="*" element={<Navigate to="/chat" replace />} />
                 </Routes>
             </main>
+
+            {deletingCollectionId !== null && (() => {
+                const target = collections.find((c) => c.id === deletingCollectionId);
+                const name = target?.name || 'this collection';
+                const docCount = target?.document_count ?? 0;
+                return (
+                    <div
+                        className="dm-modal-overlay app-collection-confirm-overlay"
+                        onClick={closeCollectionDelete}
+                        onKeyDown={handleCollectionConfirmKeys}
+                    >
+                        <div
+                            ref={collectionConfirmRef}
+                            className="dm-modal app-collection-confirm"
+                            role="dialog"
+                            aria-modal="true"
+                            aria-labelledby="app-collection-confirm-title"
+                            aria-describedby="app-collection-confirm-body"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="dm-modal-header">
+                                <h3 id="app-collection-confirm-title" className="app-collection-confirm-title">
+                                    Delete {name}?
+                                </h3>
+                            </div>
+                            <div className="dm-modal-body">
+                                <p id="app-collection-confirm-body" className="app-collection-confirm-body">
+                                    {docCount === 0 ? (
+                                        <>This collection is empty. Nothing is lost.</>
+                                    ) : (
+                                        <>
+                                            Its {docCount} {docCount === 1 ? 'document survives and becomes' : 'documents survive and become'}{' '}
+                                            unfiled. You can move them into a new collection at any time.
+                                        </>
+                                    )}
+                                </p>
+                            </div>
+                            <div className="dm-modal-actions">
+                                <button
+                                    ref={collectionConfirmCancelRef}
+                                    type="button"
+                                    className="dm-btn dm-btn-secondary"
+                                    onClick={closeCollectionDelete}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="dm-btn dm-btn-danger"
+                                    onClick={() => handleDeleteCollection(deletingCollectionId)}
+                                    disabled={collectionDeleteBusy}
+                                >
+                                    {collectionDeleteBusy ? 'Deleting…' : 'Delete collection'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
         </div>
     );
 }

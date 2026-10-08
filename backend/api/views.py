@@ -997,20 +997,26 @@ class ListDocumentsView(APIView):
             ext = Path(filename).suffix.lower()
             prev = by_stem.get(stem)
             if prev:
-                prev_ext = Path(prev).suffix.lower()
+                prev_ext = Path(prev.filename).suffix.lower()
                 if extension_priority.get(ext, -1) <= extension_priority.get(prev_ext, -1):
                     continue
-            by_stem[stem] = filename
+            by_stem[stem] = row
 
         files = []
-        for filename in sorted(by_stem.values()):
+        for row in sorted(by_stem.values(), key=lambda r: r.filename):
+            filename = row.filename
             if filename.lower().endswith(SUPPORTED_EXTENSIONS):
                 filepath = os.path.join(user_dir, filename)
                 size_bytes = os.path.getsize(filepath)
-                files.append({
+                item = {
                     'name': filename,
                     'size_bytes': size_bytes,
-                })
+                    'collection_id': row.collection_id,
+                    'collection_name': row.collection.name if row.collection else None,
+                }
+                if row.uploaded_at:
+                    item['uploaded_at'] = row.uploaded_at.isoformat()
+                files.append(item)
         return Response({
             'count': len(files),
             'documents': files,
@@ -1038,16 +1044,18 @@ class DeleteDocumentView(APIView):
 
         preview_limit = 20000
         preview_text = content[:preview_limit]
-        return Response(
-            {
-                'name': safe_name,
-                'extension': os.path.splitext(safe_name)[1].lower(),
-                'content': preview_text,
-                'total_characters': len(content),
-                'truncated': len(content) > preview_limit,
-            },
-            status=status.HTTP_200_OK
-        )
+        document = Document.objects.filter(user=request.user, filename=safe_name).first()
+        payload = {
+            'name': safe_name,
+            'extension': os.path.splitext(safe_name)[1].lower(),
+            'content': preview_text,
+            'total_characters': len(content),
+            'truncated': len(content) > preview_limit,
+            'size_bytes': os.path.getsize(filepath),
+        }
+        if document and document.uploaded_at:
+            payload['uploaded_at'] = document.uploaded_at.isoformat()
+        return Response(payload, status=status.HTTP_200_OK)
 
     def delete(self, request, filename):
         safe_name, filepath = _resolve_document_path(request.user, filename)
@@ -1735,6 +1743,55 @@ class CollectionDetailView(APIView):
             'description': collection.description,
             'created_at': collection.created_at,
             'documents': doc_list,
+        }, status=status.HTTP_200_OK)
+
+    def patch(self, request, collection_id):
+        try:
+            collection = Collection.objects.get(id=collection_id, user=request.user)
+        except Collection.DoesNotExist:
+            return Response({'error': 'Collection not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        name = request.data.get('name')
+        if not name or not str(name).strip():
+            return Response(
+                {'error': 'Collection name is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        name = str(name).strip()
+        duplicate = Collection.objects.filter(user=request.user, name=name).exclude(id=collection.id)
+        if duplicate.exists():
+            return Response(
+                {'error': 'A collection with this name already exists.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        collection.name = name
+        if 'description' in request.data:
+            description = request.data.get('description')
+            collection.description = '' if description is None else str(description)
+        collection.save()
+
+        return Response({
+            'id': collection.id,
+            'name': collection.name,
+            'description': collection.description,
+            'document_count': collection.documents.count(),
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request, collection_id):
+        try:
+            collection = Collection.objects.get(id=collection_id, user=request.user)
+        except Collection.DoesNotExist:
+            return Response({'error': 'Collection not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        unfiled_documents = collection.documents.count()
+        name = collection.name
+        collection.delete()
+
+        return Response({
+            'message': f'Collection "{name}" deleted. {unfiled_documents} document(s) moved to unfiled.',
+            'id': collection_id,
+            'unfiled_documents': unfiled_documents,
         }, status=status.HTTP_200_OK)
 
 

@@ -3,3 +3,6 @@
 @import url('./styles/primitives.css');
 @import url('./styles/shell.css');
 @import url('./styles/chat.css');
+@import url('./styles/documents.css');
+@import url('./styles/upload.css');
+@import url('./styles/document-preview.css');

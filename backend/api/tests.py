@@ -857,6 +857,132 @@ class IngestAndCollectionEndpointSmokeTests(TestCase):
         self.assertTrue(cites["present.md"]["available"])
         self.assertFalse(cites["ghost.md"]["available"])
 
+    def test_collection_rename_succeeds(self):
+        collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+
+        response = self.api_client.patch(
+            f"/api/collections/{collection.id}/",
+            {"name": "Papers", "description": "renamed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["id"], collection.id)
+        self.assertEqual(body["name"], "Papers")
+        self.assertEqual(body["description"], "renamed")
+        self.assertEqual(body["document_count"], 0)
+        collection.refresh_from_db()
+        self.assertEqual(collection.name, "Papers")
+
+    def test_collection_rename_rejects_blank_name(self):
+        collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+
+        response = self.api_client.patch(
+            f"/api/collections/{collection.id}/",
+            {"name": "   "},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        collection.refresh_from_db()
+        self.assertEqual(collection.name, "Research")
+
+    def test_collection_rename_rejects_duplicate_name(self):
+        Collection.objects.create(user=self.user, name="Research", description="first")
+        collection = Collection.objects.create(user=self.user, name="Papers", description="second")
+
+        response = self.api_client.patch(
+            f"/api/collections/{collection.id}/",
+            {"name": "Research"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        collection.refresh_from_db()
+        self.assertEqual(collection.name, "Papers")
+
+    def test_collection_rename_allows_keeping_same_name(self):
+        collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+
+        response = self.api_client.patch(
+            f"/api/collections/{collection.id}/",
+            {"name": "Research", "description": "updated"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        collection.refresh_from_db()
+        self.assertEqual(collection.description, "updated")
+
+    def test_collection_rename_other_user_returns_404(self):
+        other_user = User.objects.create_user(
+            username="collection_rival",
+            email="collection_rival@example.com",
+            password="pass12345",
+        )
+        collection = Collection.objects.create(user=other_user, name="Theirs", description="not mine")
+
+        response = self.api_client.patch(
+            f"/api/collections/{collection.id}/",
+            {"name": "Mine"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 404)
+        collection.refresh_from_db()
+        self.assertEqual(collection.name, "Theirs")
+
+    @patch("api.views.ensure_documents_loaded")
+    def test_collection_delete_unfiles_documents_and_keeps_files(self, mock_ensure):
+        collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+        user_dir, filepath = self._write_user_file("filed.txt", b"filed content")
+        Document.objects.create(user=self.user, filename="filed.txt", collection=collection)
+
+        response = self.api_client.delete(f"/api/collections/{collection.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["id"], collection.id)
+        self.assertEqual(body["unfiled_documents"], 1)
+        self.assertFalse(Collection.objects.filter(id=collection.id).exists())
+        document = Document.objects.get(user=self.user, filename="filed.txt")
+        self.assertIsNone(document.collection_id)
+        self.assertTrue(os.path.isfile(filepath))
+        mock_ensure.assert_not_called()
+
+    def test_collection_delete_other_user_returns_404(self):
+        other_user = User.objects.create_user(
+            username="collection_deleter",
+            email="collection_deleter@example.com",
+            password="pass12345",
+        )
+        collection = Collection.objects.create(user=other_user, name="Theirs", description="not mine")
+
+        response = self.api_client.delete(f"/api/collections/{collection.id}/")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(Collection.objects.filter(id=collection.id).exists())
+
+    def test_documents_list_reports_collection_for_filed_and_unfiled(self):
+        collection = Collection.objects.create(user=self.user, name="Research", description="docs")
+        self._write_user_file("filed.txt")
+        self._write_user_file("loose.txt")
+        Document.objects.create(user=self.user, filename="filed.txt", collection=collection)
+        Document.objects.create(user=self.user, filename="loose.txt")
+
+        response = self.api_client.get("/api/documents/")
+
+        self.assertEqual(response.status_code, 200)
+        items = {d["name"]: d for d in response.json()["documents"]}
+        self.assertEqual(items["filed.txt"]["collection_id"], collection.id)
+        self.assertEqual(items["filed.txt"]["collection_name"], "Research")
+        self.assertIn("uploaded_at", items["filed.txt"])
+        self.assertIsNone(items["loose.txt"]["collection_id"])
+        self.assertIsNone(items["loose.txt"]["collection_name"])
+        self.assertEqual(items["filed.txt"]["size_bytes"], len(b"hello rename"))
+        self.assertEqual(items["loose.txt"]["size_bytes"], len(b"hello rename"))
+
     @patch("api.views.load_documents")
     def test_reindex_registers_unlisted_files(self, mock_load):
         def _fake_load(user, progress_callback=None, is_cancelled=None):

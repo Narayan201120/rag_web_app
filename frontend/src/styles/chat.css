@@ -1,22 +1,26 @@
 /* Chat: the marginalia layer.
  *
- * The reading thread is one column. From 1280px up, each answer borrows the
- * right margin for its sources, the way a note sits beside the line it
- * annotates. The chips under the answer stay in the markup for narrow screens
- * and take over below the breakpoint.
+ * The thread is one reading column. The question sits flush right like a note
+ * in the outer margin of a book; the answer comes back in the reading column,
+ * set in the reading face with a marked line under every heading. From 1280px
+ * up, each answer borrows the right margin for its sources, the way a note
+ * sits beside the line it annotates, and the chips under the answer step aside
+ * so a source never appears twice on the same answer.
  *
- * Every selector here carries the chat- prefix except the legacy names App.css
- * still styles (.ai-message, .citations, .citation-chip, .chat-area ...). Those
- * keep working and are only extended, never rewritten.
+ * Every selector here is chat- prefixed, or a dm- primitive, or a scoped
+ * descendant of one of those. No legacy names, no bare elements.
  *
  * Contents:
  *   1. Screen reader helpers
- *   2. Thread and turn layout
- *   3. Empty state
- *   4. Streaming status
- *   5. Citation chips and the wide-screen rail
- *   6. Composer
- *   7. Errors and notices
+ *   2. Header
+ *   3. Thread and turn layout
+ *   4. Question and answer
+ *   5. Answer typography
+ *   6. Empty state
+ *   7. Streaming status and math
+ *   8. Citation chips and the wide-screen rail
+ *   9. Composer
+ *  10. Errors and notices
  */
 
 /* ---------- 1. Screen reader helpers ---------- */
@@ -36,59 +40,297 @@
   border: 0;
 }
 
-/* ---------- 2. Thread and turn layout ---------- */
+/* ---------- 2. Header ---------- */
 
-/* App.css already gives .chat-area its scroll and column behaviour, so this
-   only owns the parts the redesign adds. */
-.chat-thread {
-  gap: var(--space-7, 2.5rem);
-}
-
-/* One question, one answer. The rail is the third grid cell and only exists
-   from 1280px up. */
-.chat-turn {
+/* The thread scrolls under this, so the header carries its own glass and a
+   hairline instead of relying on a page background. */
+.chat-header {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-6, 2rem);
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background-color: color-mix(in srgb, var(--color-panel) 72%, transparent);
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* The narrow view keeps App.css padding, which is generous enough on its own. */
-.chat-thread .message-container {
+.chat-header-leading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   min-width: 0;
 }
 
-.chat-top-nav-title {
+/* A conversation title is a name for a long piece of reading, so it takes the
+   reading face and leans italic. Clamped, because a long title must not push
+   the New chat button off the bar. */
+.chat-header-title {
   max-width: 24ch;
   overflow: hidden;
+  font-family: var(--font-reading);
+  font-style: italic;
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  line-height: var(--leading-tight);
+  color: var(--color-text);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ---------- 3. Empty state ---------- */
+.chat-header-new-icon {
+  font-size: var(--text-sm);
+}
+
+/* ---------- 3. Thread and turn layout ---------- */
+
+/* The one scrolling region inside the main column. */
+.chat-thread {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-7);
+  min-height: 0;
+  padding: var(--space-6) var(--space-4);
+  overflow-y: auto;
+  scroll-padding-block-end: var(--space-6);
+}
+
+/* The measure is set once here and inherited by every turn, so the reading
+   column and the answer body cannot drift apart. */
+.chat-turn {
+  --chat-measure: 46rem;
+  --chat-rail: 320px;
+  --chat-gap: var(--space-7);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: var(--chat-measure);
+  margin-inline: auto;
+}
+
+.chat-part {
+  display: flex;
+  min-width: 0;
+}
+
+/* ---------- 4. Question and answer ---------- */
+
+/* The question is a margin note: aligned to the trailing edge, capped short,
+   and quiet. It never competes with the answer for attention. */
+.chat-part-user {
+  justify-content: flex-end;
+}
+
+.chat-user-message {
+  max-width: min(75%, 34rem);
+  padding: var(--space-3) var(--space-4);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-right: 2px solid var(--color-primary);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.chat-user-message :where(p) {
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  white-space: pre-wrap;
+}
+
+/* The avatar is inline-flex in flow. No negative offsets: the answer column
+   reserves the space it needs, so nothing hangs outside the measure. */
+.chat-avatar {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background-color: color-mix(in srgb, var(--color-primary) 12%, var(--color-panel));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 26%, transparent);
+  border-radius: var(--radius-pill);
+}
+
+.chat-avatar-icon {
+  font-size: var(--text-sm);
+  color: var(--color-primary);
+}
+
+/* Avatar and answer share a row so the answer starts at a fixed left edge and
+   every turn lines up no matter how wide the avatar is. */
+.chat-part-answer {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.chat-answer {
+  min-width: 0;
+  max-width: 100%;
+  font-family: var(--font-reading);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text);
+}
+
+/* ---------- 5. Answer typography ---------- */
+
+/* An answer is a page of reading. Paragraphs take the reading face, headings
+   carry a vermilion rule under them, lists hang off a rule in the margin, and
+   code and quotes are pulled back one step so they do not read as body copy. */
+
+.chat-answer :where(p) {
+  margin-bottom: var(--space-4);
+}
+
+.chat-answer :where(p):last-child {
+  margin-bottom: 0;
+}
+
+.chat-answer :where(h3) {
+  margin: var(--space-6) 0 var(--space-3);
+  padding-bottom: var(--space-2);
+  font-family: var(--font-reading);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  color: var(--color-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.chat-answer :where(h3):first-child {
+  margin-top: 0;
+}
+
+.chat-answer :where(ul, ol) {
+  margin-bottom: var(--space-4);
+  padding-left: var(--space-5);
+  border-left: 2px solid color-mix(in srgb, var(--color-border-strong) 60%, transparent);
+}
+
+.chat-answer :where(li) {
+  margin-bottom: var(--space-2);
+}
+
+.chat-answer :where(li):last-child {
+  margin-bottom: 0;
+}
+
+.chat-answer :where(blockquote) {
+  margin: var(--space-4) 0;
+  padding-left: var(--space-4);
+  font-style: italic;
+  color: var(--color-text-muted);
+  border-left: 2px solid var(--color-primary);
+}
+
+.chat-answer :where(code) {
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  color: var(--color-primary);
+  background-color: var(--color-panel-high);
+  border-radius: var(--radius-xs);
+}
+
+/* The action row stays in the flow rather than fading in on hover. A reader on
+   a touch pointer has no hover to wait for, and a control that appears is a
+   control some people never find. */
+.chat-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+}
+
+.chat-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0 var(--space-2);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-text-subtle);
+  background-color: transparent;
+  border-radius: var(--radius-sm);
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+}
+
+.chat-action-btn:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.chat-action-icon {
+  font-size: var(--text-sm);
+}
+
+/* Recorded feedback is the accent hue; unrecorded only tints on hover. */
+.chat-action-btn.chat-action-picked {
+  color: var(--color-primary);
+}
+
+.chat-action-btn.chat-action-picked:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.chat-action-btn.chat-action-picked-bad {
+  color: var(--color-error);
+}
+
+.chat-action-btn.chat-action-picked-bad:where(:hover) {
+  background-color: color-mix(in srgb, var(--color-error) 14%, transparent);
+}
+
+.chat-action-btn.chat-action-hovers:where(:hover) {
+  color: var(--color-primary);
+}
+
+.chat-action-btn.chat-action-hovers-bad:where(:hover) {
+  color: var(--color-error);
+}
+
+/* Copy is the only labelled action, so it carries a text label and parks at
+   the trailing edge of the row. */
+.chat-action-copy {
+  margin-left: auto;
+}
+
+/* ---------- 6. Empty state ---------- */
 
 .chat-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-3, 0.75rem);
+  gap: var(--space-3);
   max-width: 44rem;
-  margin: var(--space-6, 2rem) auto;
-  padding: var(--space-6, 2rem) 0;
+  margin: var(--space-6) auto;
+  padding: var(--space-6) 0;
 }
 
 .chat-empty-title {
   font-family: var(--font-reading);
-  font-size: var(--text-3xl, 1.875rem);
+  font-size: var(--text-3xl);
   font-weight: 500;
-  line-height: var(--leading-tight, 1.15);
-  color: var(--color-text, #e8e2d8);
+  line-height: var(--leading-tight);
+  color: var(--color-text);
 }
 
 .chat-empty-body {
   max-width: 38rem;
-  font-size: var(--text-base, 1rem);
-  line-height: var(--leading-relaxed, 1.65);
-  color: var(--color-text-muted, #b8afa6);
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-muted);
 }
 
 /* The prompts are shortcuts, so they read as a list of things you can ask,
@@ -96,58 +338,59 @@
 .chat-empty-prompts {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2, 0.5rem);
+  gap: var(--space-2);
   width: 100%;
-  margin-top: var(--space-3, 0.75rem);
+  margin-top: var(--space-3);
 }
 
 .chat-empty-prompt {
   display: flex;
   align-items: center;
-  gap: var(--space-3, 0.75rem);
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
-  font-family: var(--font-ui, sans-serif);
-  font-size: var(--text-sm, 0.875rem);
-  line-height: var(--leading-normal, 1.5);
+  padding: var(--space-3) var(--space-4);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
   text-align: left;
-  color: var(--color-text, #e8e2d8);
-  background-color: var(--color-panel, #1c1a18);
-  border: 1px solid var(--color-border, #332f2b);
-  border-radius: var(--radius-md, 0.5rem);
+  color: var(--color-text);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition:
-    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
-    background-color var(--duration-fast, 120ms) var(--ease-standard, ease),
-    transform var(--duration-fast, 120ms) var(--ease-standard, ease);
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
 }
 
 .chat-empty-prompt:where(:hover, :focus-visible) {
-  background-color: var(--color-panel-high, #242221);
-  border-color: var(--color-border-strong, #5a4f4a);
+  background-color: var(--color-panel-high);
+  border-color: var(--color-border-strong);
 }
 
 .chat-empty-prompt:where(:active) {
   transform: translateY(1px);
 }
 
-.chat-empty-prompt .material-symbols-outlined {
+.chat-empty-prompt-icon {
   flex-shrink: 0;
-  font-size: var(--text-lg, 1.125rem);
-  color: var(--color-primary, #e8735c);
+  font-size: var(--text-lg);
+  color: var(--color-primary);
 }
 
-/* ---------- 4. Streaming status ---------- */
+/* ---------- 7. Streaming status and math ---------- */
 
 /* Only two states exist, and both are real: no token yet, or tokens arriving.
    There is no invented retrieval or ranking phase. */
 .chat-stream-status {
   display: flex;
   align-items: center;
-  gap: var(--space-2, 0.5rem);
-  font-family: var(--font-ui, sans-serif);
-  font-size: var(--text-sm, 0.875rem);
-  color: var(--color-text-subtle, #a89a91);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
 }
 
 .chat-stream-status .dm-spinner {
@@ -157,32 +400,74 @@
 }
 
 /* KaTeX sets its own font and size, so the span only handles flow and overflow. */
-.math-inline {
-  font-family: var(--font-reading, Georgia, serif);
+.chat-math-inline {
+  font-family: var(--font-reading);
   white-space: nowrap;
 }
 
 .chat-math-display {
   display: block;
-  margin: var(--space-4, 1rem) 0;
+  margin: var(--space-4) 0;
   overflow-x: auto;
   overflow-y: hidden;
 }
 
-/* ---------- 5. Citation chips and the wide-screen rail ---------- */
+/* ---------- 8. Citation chips and the wide-screen rail ---------- */
 
 /* Narrow screens only. From 1280px the rail takes over and the chips step
    aside so a source never appears twice on the same answer. */
-.citations {
-  margin-top: var(--space-5, 1.5rem);
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
 }
 
-.citation-chip {
-  /* App.css gives the chip its look. A chip is now a button, so it needs the
-     button reset the span never required. */
-  font: inherit;
-  line-height: var(--leading-normal, 1.5);
+.chat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: var(--space-1) var(--space-3);
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
   text-align: left;
+  color: var(--color-text-muted);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.chat-chip:where(:hover, :focus-visible) {
+  color: var(--color-text);
+  background-color: var(--color-panel-high);
+  border-color: var(--color-border-strong);
+}
+
+.chat-chip-icon {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+}
+
+/* The file was renamed or deleted after the answer was written. Struck text
+   and a help cursor say that without needing a hover. */
+.chat-chip-stale {
+  color: var(--color-text-subtle);
+  text-decoration: line-through;
+  cursor: help;
+  border-style: dashed;
+}
+
+.chat-chip-stale .chat-chip-icon {
+  color: var(--color-text-subtle);
 }
 
 .chat-citation-rail {
@@ -190,19 +475,22 @@
 }
 
 @media (min-width: 1280px) {
-  /* Answer column plus a 320px margin for sources. */
+  /* Answer column plus the source margin. */
   .chat-turn {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 320px;
-    column-gap: var(--space-7, 2.5rem);
+    grid-template-columns: minmax(0, 1fr) var(--chat-rail);
+    column-gap: var(--chat-gap);
     align-items: start;
+    max-width: calc(var(--chat-measure) + var(--chat-rail) + var(--chat-gap));
   }
 
-  .chat-turn > .user-message-wrapper {
+  /* The question spans the full grid, so it can sit across the answer and its
+     margin without the rail claiming a row of its own. */
+  .chat-turn > .chat-part-user {
     grid-column: 1 / -1;
   }
 
-  .chat-turn > .ai-message-wrapper {
+  .chat-turn > .chat-part-answer {
     grid-column: 1;
     grid-row: 2;
   }
@@ -210,44 +498,22 @@
   .chat-citation-rail {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2, 0.5rem);
+    gap: var(--space-2);
     position: sticky;
-    top: var(--space-6, 2rem);
+    top: var(--space-5);
     grid-column: 2;
     grid-row: 2;
   }
 
-  .chat-turn .citations {
+  .chat-turn .chat-chips {
     display: none;
   }
 
-  /* App.css pulls the answer left of the avatar with a negative offset. The
-     grid's answer column already reserves that space, so the avatar sits
-     inside the cell instead of hanging outside the thread. */
-  .chat-turn .ai-avatar {
-    position: static;
-    margin-bottom: var(--space-3, 0.75rem);
-  }
-
-  .chat-turn .ai-message {
-    max-width: 100%;
-  }
-
-  .chat-turn .ai-message-wrapper {
-    display: block;
-  }
-
   /* A turn with no sources has nothing to put in the margin, so it keeps the
-     full width instead of leaving 320px empty. */
+     reading measure instead of leaving 320px empty. */
   .chat-turn-norail {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  /* App.css pads the thread by 12rem a side at 1024px up. With a rail in the
-     margin that indent is wasted, so it comes back to a readable measure. */
-  .chat-thread {
-    padding-left: var(--space-5, 1.5rem);
-    padding-right: var(--space-5, 1.5rem);
+    max-width: var(--chat-measure);
   }
 }
 
@@ -257,127 +523,226 @@
 .chat-citation-card {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3, 0.75rem);
+  gap: var(--space-3);
   width: 100%;
-  padding: var(--space-3, 0.75rem);
-  font-family: var(--font-ui, sans-serif);
+  padding: var(--space-3);
+  font-family: var(--font-ui);
   text-align: left;
-  color: var(--color-text, #e8e2d8);
-  background-color: var(--color-panel, #1c1a18);
-  border: 1px solid var(--color-border, #332f2b);
-  border-left: 2px solid var(--color-primary, #e8735c);
-  border-radius: var(--radius-sm, 0.25rem);
+  color: var(--color-text);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-primary);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
-    background-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+    border-color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
 }
 
 .chat-citation-card:where(:hover, :focus-visible) {
-  background-color: var(--color-panel-high, #242221);
-  border-color: var(--color-border-strong, #5a4f4a);
-  border-left-color: var(--color-primary, #e8735c);
+  background-color: var(--color-panel-high);
+  border-color: var(--color-border-strong);
+  border-left-color: var(--color-primary);
 }
 
 .chat-citation-index {
-  flex-shrink: 0;
   display: grid;
   place-items: center;
+  flex-shrink: 0;
   min-width: 1.375rem;
   height: 1.375rem;
-  padding: 0 var(--space-1, 0.25rem);
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-primary, #e8735c);
-  background-color: var(--color-bg-raised, #171614);
-  border: 1px solid var(--color-border, #332f2b);
-  border-radius: var(--radius-xs, 2px);
+  padding: 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-primary);
+  background-color: var(--color-bg-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
 }
 
 .chat-citation-text {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1, 0.25rem);
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .chat-citation-name {
-  font-size: var(--text-sm, 0.875rem);
-  line-height: var(--leading-normal, 1.5);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
   overflow-wrap: anywhere;
 }
 
 .chat-citation-state {
   display: flex;
   align-items: center;
-  gap: var(--space-1, 0.25rem);
-  font-size: var(--text-xs, 0.75rem);
+  gap: var(--space-1);
+  font-size: var(--text-xs);
   line-height: 1.4;
-  color: var(--color-text-subtle, #a89a91);
+  color: var(--color-text-subtle);
 }
 
 .chat-citation-dot {
+  flex-shrink: 0;
   width: 0.375rem;
   height: 0.375rem;
-  flex-shrink: 0;
-  border-radius: var(--radius-pill, 999px);
-  background-color: var(--color-success, #5e9b8c);
+  background-color: var(--color-success);
+  border-radius: var(--radius-pill);
 }
 
-.chat-citation-dot.is-stale {
-  background-color: var(--color-warning, #c99a3e);
+.chat-citation-dot-stale {
+  background-color: var(--color-warning);
 }
 
 /* The file was renamed or deleted after the answer was written. The dashed
    edge and the struck filename carry that without needing a hover. */
 .chat-citation-card-stale {
-  border-style: dashed;
-  border-left-color: var(--color-warning, #c99a3e);
   background-color: transparent;
+  border-style: dashed;
+  border-left-color: var(--color-warning);
   cursor: help;
 }
 
-.chat-citation-card-stale .chat-citation-index,
-.chat-citation-card-stale .chat-citation-name {
-  color: var(--color-text-subtle, #a89a91);
+.chat-citation-card-stale :where(.chat-citation-index, .chat-citation-name) {
+  color: var(--color-text-subtle);
 }
 
 .chat-citation-card-stale .chat-citation-name {
   text-decoration: line-through;
 }
 
-/* ---------- 6. Composer ---------- */
+/* ---------- 9. Composer ---------- */
 
-.chat-stop-btn {
-  /* Same shape as .send-btn, so the control does not jump when it swaps.
-     Vermilion marks action, and stopping is an action. */
-  background: linear-gradient(to bottom right, var(--color-error, #ef4444), var(--color-primary-container, #93000a));
-  color: var(--color-on-primary, #ffe3dd);
+/* In flow at the bottom of the column, not floating over it. The thread has
+   its own scroll, so nothing needs a gradient scrim or clearance padding. */
+.chat-composer {
+  flex: 0 0 auto;
+  padding: var(--space-4);
+  background-color: var(--color-bg);
+  border-top: 1px solid var(--color-border);
 }
 
-/* ---------- 7. Errors and notices ---------- */
+.chat-compose-form {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+}
+
+/* The one element on screen allowed the glow. --shadow-glow is a ring plus a
+   short halo, which is what makes the composer read as the one live surface. */
+.chat-compose-box {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background-color: color-mix(in srgb, var(--color-panel) 82%, transparent);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glow);
+}
+
+.chat-attach-btn {
+  flex-shrink: 0;
+  margin-bottom: var(--space-1);
+  color: var(--color-text-subtle);
+}
+
+.chat-attach-btn:where(:hover) {
+  color: var(--color-primary);
+}
+
+.chat-input-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A textarea, not a dm-textarea: this one grows with the question and stops
+   at twelve lines, and it has no field chrome because the box around it is the
+   field. */
+.chat-compose-input {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  max-height: 12rem;
+  padding: var(--space-3) var(--space-2);
+  overflow-y: auto;
+  font-family: var(--font-reading);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  resize: none;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+
+.chat-compose-input::placeholder {
+  color: var(--color-text-subtle);
+}
+
+.chat-compose-input:where(:focus-visible) {
+  outline: none;
+  border-color: var(--color-border-strong);
+}
+
+.chat-send-btn {
+  flex-shrink: 0;
+  margin-bottom: var(--space-1);
+  border-radius: var(--radius-pill);
+}
+
+/* Vermilion on the glyph, so the arrow and the stop square read as filled
+   without a font-variation override in the markup. */
+.chat-send-icon {
+  font-size: var(--text-xl);
+  font-variation-settings: 'FILL' 1;
+  color: var(--color-on-primary);
+}
+
+/* Stop keeps the send shape so the control does not jump when it swaps, but
+   takes the error hue: stopping an answer is an interrupt, not a send. */
+.chat-stop-btn {
+  background-color: var(--color-error);
+}
+
+.chat-stop-btn:where(:hover):not(:disabled) {
+  background-color: color-mix(in srgb, var(--color-error) 86%, var(--color-text));
+}
+
+.chat-compose-note {
+  margin-top: var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  text-align: center;
+  color: var(--color-text-subtle);
+}
+
+/* ---------- 10. Errors and notices ---------- */
 
 /* An error sits above the composer with its own retry, never in a dialog. */
 .chat-inline-error {
   display: flex;
   align-items: center;
-  gap: var(--space-2, 0.5rem);
-  margin-bottom: var(--space-2, 0.5rem);
-  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  font-family: var(--font-ui, sans-serif);
-  font-size: var(--text-sm, 0.875rem);
-  line-height: var(--leading-normal, 1.5);
-  color: var(--color-text, #e8e2d8);
-  background-color: var(--color-panel, #1c1a18);
-  border: 1px solid var(--color-border, #332f2b);
-  border-left: 2px solid var(--color-error, #ef4444);
-  border-radius: var(--radius-sm, 0.25rem);
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-error);
+  border-radius: var(--radius-sm);
 }
 
 .chat-inline-error .material-symbols-outlined {
   flex-shrink: 0;
-  font-size: var(--text-base, 1rem);
-  color: var(--color-error, #ef4444);
+  font-size: var(--text-base);
+  color: var(--color-error);
 }
 
 .chat-inline-error-text {
@@ -388,38 +753,24 @@
 
 .chat-inline-retry {
   flex-shrink: 0;
-  padding: var(--space-1, 0.25rem) var(--space-3, 0.75rem);
-  font-family: var(--font-ui, sans-serif);
-  font-size: var(--text-xs, 0.75rem);
-  font-weight: 600;
-  color: var(--color-on-primary, #ffe3dd);
-  background-color: var(--color-primary, #e8735c);
-  border: 1px solid transparent;
-  border-radius: var(--radius-xs, 2px);
-  cursor: pointer;
-  transition: background-color var(--duration-fast, 120ms) var(--ease-standard, ease);
-}
-
-.chat-inline-retry:hover {
-  background-color: var(--color-primary-strong, #d9553f);
 }
 
 .chat-upload-note {
-  margin-bottom: var(--space-2, 0.5rem);
-  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
-  font-family: var(--font-ui, sans-serif);
-  font-size: var(--text-xs, 0.75rem);
-  line-height: var(--leading-normal, 1.5);
-  color: var(--color-text-muted, #b8afa6);
-  background-color: var(--color-panel, #1c1a18);
-  border: 1px solid var(--color-border, #332f2b);
-  border-left: 2px solid var(--color-success, #5e9b8c);
-  border-radius: var(--radius-sm, 0.25rem);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+  background-color: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-left: 2px solid var(--color-success);
+  border-radius: var(--radius-sm);
 }
 
 .chat-upload-note-error {
-  border-left-color: var(--color-error, #ef4444);
-  color: var(--color-text, #e8e2d8);
+  color: var(--color-text);
+  border-left-color: var(--color-error);
 }
 
 /* ---------- Reduced motion ---------- */

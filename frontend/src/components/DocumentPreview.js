@@ -13,87 +13,60 @@ import { apiClient, requestWithRefresh } from '../apiClient';
  *
  * Backend contract of GET /api/documents/<filename>/:
  *   { name, extension, content, total_characters, truncated }
+ *   size_bytes and uploaded_at are optional: older payloads omit them and the
+ *   header simply leaves those items out.
  * Errors arrive as { error: '...' }.
+ *
+ * Every visual value lives in styles/document-preview.css. Nothing here carries
+ * a style prop, so the reading layout can change without touching this file.
  */
 
 const HEADING_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
-const HEADING_STYLES = {
-    h1: { fontSize: 'var(--text-2xl)', marginTop: 'var(--space-5)' },
-    h2: { fontSize: 'var(--text-xl)', marginTop: 'var(--space-5)' },
-    h3: { fontSize: 'var(--text-lg)', marginTop: 'var(--space-4)' },
-    h4: { fontSize: 'var(--text-base)', marginTop: 'var(--space-4)' },
-    h5: { fontSize: 'var(--text-sm)', marginTop: 'var(--space-3)' },
-    h6: { fontSize: 'var(--text-sm)', marginTop: 'var(--space-3)' },
-};
+// A fence opener, with or without a language tag after the backticks.
+const FENCE_PATTERN = /^```(.*)$/;
 
-const MATH_STYLE = {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '0.9em',
-    padding: '0.1em 0.3em',
-    backgroundColor: 'var(--color-panel-high)',
-    borderRadius: 'var(--radius-xs)',
-    whiteSpace: 'pre-wrap',
-};
+/* The two inline shapes this reader knows. Both render as a mono pill.
+ *
+ * `$...$` and `$$...$$` are not formulas here on purpose: no math engine is
+ * loaded, so a raw expression stays code and nobody mistakes it for prose. A
+ * lone `$` with no partner is left alone and reads as ordinary text. */
+const INLINE_PATTERN = /(`[^`\n]+`|\$\$[^$\n]+\$\$|\$[^$\n]+\$)/g;
 
-// $...$ and $$...$$ stay plain text on purpose. No math engine here: the shared
-// preview renders them as code so nobody mistakes a raw formula for prose.
 function renderInline(text, keyPrefix) {
-    const parts = [];
-    let rest = text;
-    let index = 0;
-
-    while (rest.length > 0) {
-        const start = rest.indexOf('$');
-        if (start === -1) {
-            parts.push(<span key={`${keyPrefix}-t${index}`}>{rest}</span>);
-            break;
-        }
-        if (start > 0) {
-            parts.push(<span key={`${keyPrefix}-t${index}`}>{rest.slice(0, start)}</span>);
-        }
-        const end = rest.indexOf('$', start + 1);
-        if (end === -1) {
-            parts.push(<span key={`${keyPrefix}-t${index}`}>{rest.slice(start)}</span>);
-            break;
-        }
-        parts.push(
-            <code key={`${keyPrefix}-m${index}`} style={MATH_STYLE}>
-                {rest.slice(start, end + 1)}
-            </code>
-        );
-        rest = rest.slice(end + 1);
-        index += 1;
-    }
-
-    return parts;
+    // A capturing group keeps the matched delimiters in the split result, so
+    // every chunk is either a whole token or a run of plain text.
+    return String(text)
+        .split(INLINE_PATTERN)
+        .filter((chunk) => chunk !== '' && chunk !== undefined)
+        .map((chunk, i) => {
+            if (chunk.startsWith('`') && chunk.endsWith('`') && chunk.length > 2) {
+                return (
+                    <code key={`${keyPrefix}-c${i}`} className="doc-preview-code-inline">
+                        {chunk.slice(1, -1)}
+                    </code>
+                );
+            }
+            if (chunk.startsWith('$')) {
+                return (
+                    <code key={`${keyPrefix}-m${i}`} className="doc-preview-code-inline">
+                        {chunk}
+                    </code>
+                );
+            }
+            return <span key={`${keyPrefix}-t${i}`}>{chunk}</span>;
+        });
 }
 
-const LIST_STYLE = {
-    margin: '0 0 var(--space-3)',
-    paddingLeft: '1.5rem',
-};
-
-const PARAGRAPH_STYLE = {
-    margin: '0 0 var(--space-3)',
-    lineHeight: 'var(--leading-relaxed)',
-};
-
-const BLOCKQUOTE_STYLE = {
-    margin: '0 0 var(--space-3)',
-    padding: 'var(--space-1) 0 var(--space-1) var(--space-3)',
-    borderLeft: '3px solid var(--color-border-strong)',
-    color: 'var(--color-text-muted)',
-};
-
 /* A deliberately small markdown reader: headings, paragraphs, ordered and
- * unordered lists, blockquotes, and inline math as text. Enough to read a
- * note without a parser dependency. */
+ * unordered lists, blockquotes, fenced code, and inline code or math as a mono
+ * pill. Enough to read a note without a parser dependency. */
 function renderMarkdown(content) {
     const text = String(content || '');
     const blocks = [];
     let listItems = { items: [], startIndex: 1 };
     let listType = null;
+    let codeFence = null;
     let key = 0;
 
     const flushList = () => {
@@ -101,11 +74,9 @@ function renderMarkdown(content) {
         const Tag = listType === 'ol' ? 'ol' : 'ul';
         const start = listType === 'ol' ? listItems.startIndex : null;
         blocks.push(
-            <Tag key={`list-${key++}`} start={start || undefined} style={LIST_STYLE}>
+            <Tag key={`list-${key++}`} start={start || undefined}>
                 {listItems.items.map((item, i) => (
-                    <li key={i} style={{ marginBottom: 'var(--space-1)' }}>
-                        {renderInline(item, `li-${key}-${i}`)}
-                    </li>
+                    <li key={i}>{renderInline(item, `li-${key}-${i}`)}</li>
                 ))}
             </Tag>
         );
@@ -125,8 +96,46 @@ function renderMarkdown(content) {
         listItems.items.push(item);
     };
 
+    const flushCode = () => {
+        if (!codeFence) return;
+        const { lang, lines } = codeFence;
+        blocks.push(
+            <div key={`code-${key++}`} className="doc-preview-code">
+                {lang && (
+                    <div className="doc-preview-code-bar">
+                        <span className="doc-preview-code-lang">{lang}</span>
+                    </div>
+                )}
+                <pre>
+                    <code className="doc-preview-code-body">{lines.join('\n')}</code>
+                </pre>
+            </div>
+        );
+        codeFence = null;
+    };
+
     for (const raw of text.split('\n')) {
         const line = raw.trim();
+
+        // Fences flip the parser in and out of literal mode. The second fence
+        // closes whatever the first opened.
+        const fence = line.match(FENCE_PATTERN);
+        if (fence) {
+            if (codeFence) {
+                flushCode();
+            } else {
+                flushList();
+                codeFence = { lang: fence[1].trim().slice(0, 24), lines: [] };
+            }
+            continue;
+        }
+
+        // Inside a fence every line is code, blank lines and indent included,
+        // so nothing else in this loop gets a look at it.
+        if (codeFence) {
+            codeFence.lines.push(raw);
+            continue;
+        }
 
         if (!line) {
             flushList();
@@ -138,20 +147,7 @@ function renderMarkdown(content) {
             flushList();
             const level = Math.min(heading[1].length, 6);
             const Tag = HEADING_TAGS[level - 1];
-            blocks.push(
-                <Tag
-                    key={`h-${key++}`}
-                    style={{
-                        ...HEADING_STYLES[Tag],
-                        marginBottom: 'var(--space-2)',
-                        fontFamily: 'var(--font-ui)',
-                        lineHeight: 'var(--leading-tight)',
-                        color: 'var(--color-text)',
-                    }}
-                >
-                    {renderInline(heading[2], `h-${key}`)}
-                </Tag>
-            );
+            blocks.push(<Tag key={`h-${key++}`}>{renderInline(heading[2], `h-${key}`)}</Tag>);
             continue;
         }
 
@@ -171,7 +167,7 @@ function renderMarkdown(content) {
         if (quote) {
             flushList();
             blocks.push(
-                <blockquote key={`bq-${key++}`} style={BLOCKQUOTE_STYLE}>
+                <blockquote key={`bq-${key++}`}>
                     {renderInline(quote[1], `bq-${key}`)}
                 </blockquote>
             );
@@ -179,15 +175,41 @@ function renderMarkdown(content) {
         }
 
         flushList();
-        blocks.push(
-            <p key={`p-${key++}`} style={PARAGRAPH_STYLE}>
-                {renderInline(line, `p-${key}`)}
-            </p>
-        );
+        blocks.push(<p key={`p-${key++}`}>{renderInline(line, `p-${key}`)}</p>);
     }
 
+    // An unterminated fence still renders its lines rather than dropping them.
+    flushCode();
     flushList();
     return blocks;
+}
+
+/* Header metadata. Each of these returns an empty string when the payload
+ * leaves the field out, and the caller drops empty items rather than rendering
+ * a blank or a NaN. */
+function fileTypeLabel(extension, name) {
+    const raw = String(extension || '').trim() || (String(name).match(/\.[^.]+$/) || [''])[0];
+    const clean = raw.replace(/^\./, '').trim();
+    return clean ? clean.toUpperCase().slice(0, 8) : '';
+}
+
+function formatSize(bytes) {
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value <= 0) return '';
+    if (value < 1024) return `${Math.round(value)} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatDate(value) {
+    if (!value) return '';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    });
 }
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -303,6 +325,11 @@ function DocumentPreview({ name, onClose }) {
     const isMarkdown = (doc?.extension || '').toLowerCase() === '.md';
     const content = doc?.content || '';
 
+    const typeLabel = fileTypeLabel(doc?.extension, displayName);
+    const sizeLabel = formatSize(doc?.size_bytes);
+    const dateLabel = formatDate(doc?.uploaded_at);
+    const hasMeta = Boolean(typeLabel || sizeLabel || dateLabel);
+
     return (
         <div
             className="dm-modal-overlay"
@@ -311,102 +338,92 @@ function DocumentPreview({ name, onClose }) {
         >
             <div
                 ref={dialogRef}
-                className="dm-modal"
+                className="dm-modal doc-preview-modal"
                 role="dialog"
                 aria-modal="true"
                 aria-label={`Preview of ${displayName}`}
                 tabIndex={-1}
                 onClick={(event) => event.stopPropagation()}
-                style={{
-                    maxWidth: '56rem',
-                    maxHeight: 'min(88dvh, 56rem)',
-                    outline: 'none',
-                }}
             >
-                <div className="dm-modal-header" style={{ gap: 'var(--space-3)' }}>
-                    <h3
-                        title={displayName}
-                        style={{
-                            margin: 0,
-                            minWidth: 0,
-                            flex: '1 1 auto',
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: 'var(--text-sm)',
-                            fontWeight: 600,
-                            color: 'var(--color-text)',
-                        }}
-                    >
-                        {displayName}
-                    </h3>
+                <div className="dm-modal-header doc-preview-header">
+                    <div className="doc-preview-header-main">
+                        <h3 className="doc-preview-name" title={displayName}>
+                            {displayName}
+                        </h3>
+                        {hasMeta && (
+                            <div className="doc-preview-meta">
+                                {typeLabel && (
+                                    <span className="dm-badge doc-preview-badge">{typeLabel}</span>
+                                )}
+                                {sizeLabel && (
+                                    <span className="doc-preview-meta-item">{sizeLabel}</span>
+                                )}
+                                {dateLabel && (
+                                    <span className="doc-preview-meta-item">{dateLabel}</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
                     <button
                         type="button"
-                        className="dm-btn dm-btn-ghost dm-btn-sm dm-btn-icon"
+                        className="dm-btn dm-btn-ghost dm-btn-sm dm-btn-icon doc-preview-close"
                         aria-label="Close preview"
                         onClick={close}
                     >
-                        <span aria-hidden="true">&times;</span>
+                        <span className="material-symbols-outlined" aria-hidden="true">close</span>
                     </button>
                 </div>
 
-                <div className="dm-modal-body" style={{ padding: 'var(--space-5)' }}>
+                <div className="dm-modal-body doc-preview-body">
                     {loading && (
-                        <div
-                            role="status"
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 'var(--space-3)',
-                                color: 'var(--color-text-muted)',
-                                fontSize: 'var(--text-sm)',
-                            }}
-                        >
-                            <span className="dm-spinner" aria-hidden="true" />
-                            <span>Loading document content...</span>
+                        <div className="doc-preview-loading" role="status">
+                            <div className="doc-preview-loading-head">
+                                <span className="dm-spinner" aria-hidden="true" />
+                                <span>Loading document content...</span>
+                            </div>
+                            <div className="doc-preview-skeleton" aria-hidden="true">
+                                <span className="dm-skeleton doc-preview-skeleton-line" />
+                                <span className="dm-skeleton doc-preview-skeleton-line" />
+                                <span className="dm-skeleton doc-preview-skeleton-line" />
+                            </div>
                         </div>
                     )}
 
                     {!loading && error && (
-                        <p className="dm-error-text">{error}</p>
+                        <p className="dm-error-text doc-preview-error">{error}</p>
                     )}
 
                     {!loading && !error && isMarkdown && (
-                        <div style={{ fontFamily: 'var(--font-reading)' }}>
+                        <div className="doc-preview-reading">
                             {content.trim() ? (
                                 renderMarkdown(content)
                             ) : (
-                                <p className="dm-help">No text extracted from this document.</p>
+                                <p className="dm-help doc-preview-empty">
+                                    No text extracted from this document.
+                                </p>
                             )}
                         </div>
                     )}
 
                     {!loading && !error && !isMarkdown && (
-                        <pre
-                            style={{
-                                margin: 0,
-                                fontFamily: 'var(--font-mono)',
-                                fontSize: 'var(--text-sm)',
-                                lineHeight: 'var(--leading-normal)',
-                                whiteSpace: 'pre-wrap',
-                                overflowWrap: 'anywhere',
-                                color: 'var(--color-text)',
-                            }}
-                        >
-                            {content.trim()
-                                ? content
-                                : 'No text extracted from this document.'}
-                        </pre>
+                        <div className="doc-preview-reading">
+                            <pre className="doc-preview-plain">
+                                {content.trim()
+                                    ? content
+                                    : 'No text extracted from this document.'}
+                            </pre>
+                        </div>
                     )}
+                </div>
 
-                    {!loading && !error && doc?.truncated && (
-                        <p className="dm-help" style={{ marginBottom: 0 }}>
+                {!loading && !error && doc?.truncated && (
+                    <div className="doc-preview-footer">
+                        <p className="dm-help doc-preview-footer-text">
                             Showing the first {content.length.toLocaleString()} of{' '}
                             {(doc.total_characters ?? content.length).toLocaleString()} characters.
                         </p>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -42,13 +42,13 @@ function renderMath(tex, displayMode) {
     if (html !== null) {
         return (
             <span
-                className={displayMode ? 'chat-math-display' : 'math-inline'}
+                className={displayMode ? 'chat-math-display' : 'chat-math-inline'}
                 /* KaTeX HTML, escaped by KaTeX itself. See renderKatex. */
                 dangerouslySetInnerHTML={{ __html: html }}
             />
         );
     }
-    return <span className={displayMode ? 'chat-math-display' : 'math-inline'}>{renderMathAscii(tex)}</span>;
+    return <span className={displayMode ? 'chat-math-display' : 'chat-math-inline'}>{renderMathAscii(tex)}</span>;
 }
 
 function renderMathAscii(mathText) {
@@ -365,18 +365,18 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
 
     /* Chips live inside the answer bubble. */
     const renderChips = (message, keyPrefix) => (
-        <div className="citations">
+        <div className="chat-chips">
             {message.sources.map((source, sidx) => {
                 const stale = isSourceStale(message, sidx);
                 return (
                     <button
                         type="button"
                         key={`${keyPrefix}-chip-${sidx}`}
-                        className={`citation-chip${stale ? ' citation-stale' : ''}`}
+                        className={`chat-chip${stale ? ' chat-chip-stale' : ''}`}
                         onClick={() => setPreviewName(source)}
                         title={stale ? 'No longer indexed' : `Open ${source}`}
                     >
-                        <span className="material-symbols-outlined citation-icon" aria-hidden="true">description</span>
+                        <span className="material-symbols-outlined chat-chip-icon" aria-hidden="true">description</span>
                         [{sidx + 1}] {source}
                     </button>
                 );
@@ -402,7 +402,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                         <span className="chat-citation-text">
                             <span className="chat-citation-name">{source}</span>
                             <span className="chat-citation-state">
-                                <span className={`chat-citation-dot${stale ? ' is-stale' : ''}`} aria-hidden="true" />
+                                <span className={`chat-citation-dot${stale ? ' chat-citation-dot-stale' : ''}`} aria-hidden="true" />
                                 {stale ? 'Missing from index' : 'Available'}
                             </span>
                         </span>
@@ -416,66 +416,66 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
 
     return (
         <>
-            <header className="top-nav">
-                <div className="top-nav-title-container">
-                    <h2 className="top-nav-title chat-top-nav-title">{conversationTitle}</h2>
+            <header className="chat-header">
+                <div className="chat-header-leading">
+                    <h2 className="chat-header-title">{conversationTitle}</h2>
                 </div>
                 {(messages.length > 0 || conversationId) && (
-                    <button type="button" className="new-chat-btn" onClick={onNewConversation}>
-                        <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: '0.875rem' }}>add</span>
+                    <button type="button" className="dm-btn dm-btn-secondary dm-btn-sm" onClick={onNewConversation}>
+                        <span className="material-symbols-outlined chat-header-new-icon" aria-hidden="true">add</span>
                         New chat
                     </button>
                 )}
             </header>
 
-            <div className="chat-area chat-thread" role="log" aria-label="Conversation" aria-live="off">
+            <div className="chat-thread" role="log" aria-label="Conversation" aria-live="off">
                 {messages.map((msg, i) => (
                     <div key={msg.id ?? i} className="chat-turn">
-                        <div className="message-container user-message-wrapper">
-                            <div className="user-message">
+                        <div className="chat-part chat-part-user">
+                            <div className="chat-user-message">
                                 <p>{msg.question}</p>
                             </div>
                         </div>
 
-                        <div className="message-container ai-message-wrapper">
-                            <div className="ai-avatar" aria-hidden="true">
-                                <span className="material-symbols-outlined ai-avatar-icon">smart_toy</span>
-                            </div>
-                            <div className="ai-message">
+                        <div className="chat-part chat-part-answer">
+                            <span className="chat-avatar" aria-hidden="true">
+                                <span className="material-symbols-outlined chat-avatar-icon">smart_toy</span>
+                            </span>
+                            <div className="chat-answer">
                                 {renderAnswerMarkdown(msg.answer)}
 
                                 {msg.sources && msg.sources.length > 0 && renderChips(msg, `m${i}`)}
 
                                 {msg.id && (
-                                    <div className="ai-actions always-visible">
+                                    <div className="chat-actions">
                                         <button
                                             type="button"
-                                            className={`ai-action-btn ${feedbackState[msg.id] === 'up' ? 'active-primary' : 'hover-primary'}`}
+                                            className={`chat-action-btn ${feedbackState[msg.id] === 'up' ? 'chat-action-picked' : 'chat-action-hovers'}`}
                                             onClick={() => submitFeedback(msg.id, 'up')}
                                             aria-label="Good answer"
                                             aria-pressed={feedbackState[msg.id] === 'up'}
                                             title="Good answer"
                                         >
-                                            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: '0.875rem' }}>thumb_up</span>
+                                            <span className="material-symbols-outlined chat-action-icon" aria-hidden="true">thumb_up</span>
                                         </button>
                                         <button
                                             type="button"
-                                            className={`ai-action-btn ${feedbackState[msg.id] === 'down' ? 'active-error' : 'hover-error'}`}
+                                            className={`chat-action-btn ${feedbackState[msg.id] === 'down' ? 'chat-action-picked chat-action-picked-bad' : 'chat-action-hovers chat-action-hovers-bad'}`}
                                             onClick={() => submitFeedback(msg.id, 'down')}
                                             aria-label="Bad answer"
                                             aria-pressed={feedbackState[msg.id] === 'down'}
                                             title="Bad answer"
                                         >
-                                            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: '0.875rem' }}>thumb_down</span>
+                                            <span className="material-symbols-outlined chat-action-icon" aria-hidden="true">thumb_down</span>
                                         </button>
                                         <button
                                             type="button"
-                                            className="ai-action-btn hover-on-surface ai-action-copy"
+                                            className="chat-action-btn chat-action-hovers chat-action-copy"
                                             onClick={() => navigator.clipboard.writeText(msg.answer)}
                                             aria-label="Copy answer"
                                             title="Copy answer"
                                         >
-                                            <span className="material-symbols-outlined" aria-hidden="true" style={{ fontSize: '0.875rem' }}>content_copy</span>
+                                            <span className="material-symbols-outlined chat-action-icon" aria-hidden="true">content_copy</span>
                                             Copy
                                         </button>
                                     </div>
@@ -489,16 +489,16 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
 
                 {streamingAnswer && (
                     <div className="chat-turn chat-turn-norail">
-                        <div className="message-container user-message-wrapper">
-                            <div className="user-message">
+                        <div className="chat-part chat-part-user">
+                            <div className="chat-user-message">
                                 <p>{streamingAnswer.question}</p>
                             </div>
                         </div>
-                        <div className="message-container ai-message-wrapper">
-                            <div className="ai-avatar" aria-hidden="true">
-                                <span className="material-symbols-outlined ai-avatar-icon">smart_toy</span>
-                            </div>
-                            <div className="ai-message">
+                        <div className="chat-part chat-part-answer">
+                            <span className="chat-avatar" aria-hidden="true">
+                                <span className="material-symbols-outlined chat-avatar-icon">smart_toy</span>
+                            </span>
+                            <div className="chat-answer">
                                 <p className="chat-stream-status">
                                     <span className="dm-spinner" aria-hidden="true" />
                                     {streamStatus === 'thinking' ? 'Thinking' : 'Answering'}
@@ -519,7 +519,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                             {EXAMPLE_PROMPTS.map((prompt) => (
                                 <li key={prompt}>
                                     <button type="button" className="chat-empty-prompt" onClick={() => applyExample(prompt)}>
-                                        <span className="material-symbols-outlined" aria-hidden="true">north_east</span>
+                                        <span className="material-symbols-outlined chat-empty-prompt-icon" aria-hidden="true">north_east</span>
                                         {prompt}
                                     </button>
                                 </li>
@@ -533,13 +533,13 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
 
             <span className="chat-sr-only" role="status" aria-live="polite">{announcement}</span>
 
-            <div className="compose-area">
-                <form className="compose-container" onSubmit={handleSubmit}>
+            <div className="chat-composer">
+                <form className="chat-compose-form" onSubmit={handleSubmit}>
                     {askError && (
                         <div className="chat-inline-error" role="alert">
                             <span className="material-symbols-outlined" aria-hidden="true">error</span>
                             <span className="chat-inline-error-text">{askError.message}</span>
-                            <button type="button" className="chat-inline-retry" onClick={handleRetry}>
+                            <button type="button" className="dm-btn dm-btn-primary dm-btn-sm chat-inline-retry" onClick={handleRetry}>
                                 Retry
                             </button>
                         </div>
@@ -551,7 +551,7 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                         </div>
                     )}
 
-                    <div className="compose-box">
+                    <div className="chat-compose-box">
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -560,17 +560,17 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                         />
                         <button
                             type="button"
-                            className="attach-btn"
+                            className="dm-btn dm-btn-ghost dm-btn-icon chat-attach-btn"
                             onClick={handleComposePlus}
                             aria-label="Upload a document"
                             title="Upload document"
                         >
                             <span className="material-symbols-outlined" aria-hidden="true">add_circle</span>
                         </button>
-                        <div className="input-wrapper">
+                        <div className="chat-input-wrap">
                             <textarea
                                 ref={composerRef}
-                                className="compose-input"
+                                className="chat-compose-input"
                                 aria-label="Ask a question about your documents"
                                 placeholder="Ask about your documents..."
                                 rows="1"
@@ -585,28 +585,26 @@ function Chat({ conversations, conversationId, onLoadConversation, onNewConversa
                             ></textarea>
                         </div>
                         {loading ? (
-                            <button type="button" className="send-btn chat-stop-btn" onClick={handleStop} aria-label="Stop generating" title="Stop generating">
+                            <button type="button" className="dm-btn dm-btn-primary dm-btn-icon dm-btn-lg chat-send-btn chat-stop-btn" onClick={handleStop} aria-label="Stop generating" title="Stop generating">
                                 <span
-                                    className="material-symbols-outlined"
+                                    className="material-symbols-outlined chat-send-icon"
                                     aria-hidden="true"
-                                    style={{ fontSize: '1.125rem', fontVariationSettings: "'FILL' 1" }}
                                 >
                                     stop
                                 </span>
                             </button>
                         ) : (
-                            <button type="submit" className="send-btn" disabled={!question.trim()} aria-label="Send message" title="Send message">
+                            <button type="submit" className="dm-btn dm-btn-primary dm-btn-icon dm-btn-lg chat-send-btn" disabled={!question.trim()} aria-label="Send message" title="Send message">
                                 <span
-                                    className="material-symbols-outlined"
+                                    className="material-symbols-outlined chat-send-icon"
                                     aria-hidden="true"
-                                    style={{ fontSize: '1.125rem', fontVariationSettings: "'FILL' 1" }}
                                 >
                                     arrow_upward
                                 </span>
                             </button>
                         )}
                     </div>
-                    <div className="footer-text">
+                    <div className="chat-compose-note">
                         <span>AI responses can be inaccurate. Please verify critical information.</span>
                     </div>
                 </form>

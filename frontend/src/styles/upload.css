@@ -1,0 +1,331 @@
+/* Upload: dropzone, URL row, progress, failure.
+ *
+ * A drop target is an invitation, so it reads as one: a dashed edge, a glyph,
+ * and a line that says exactly what will be accepted. It is a real button to
+ * the keyboard and a real drop target to the pointer.
+ *
+ * Every selector carries the doc- prefix. The old .upload-section, its forms,
+ * and its styled file input are gone from the markup; the native input is
+ * visually hidden and driven from the dropzone.
+ *
+ * Contents:
+ *   1. Forms
+ *   2. Dropzone
+ *   3. Upload actions
+ *   4. URL row
+ *   5. Progress
+ *   6. Failure block
+ */
+
+/* ---------- 1. Forms ---------- */
+
+.doc-upload-form,
+.doc-url-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+/* ---------- 2. Dropzone ---------- */
+
+/* A real button element, so it needs the button reset spelled back out. */
+.doc-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 0.5rem);
+  width: 100%;
+  /* Tall enough to be an easy target, short enough not to eat the page. */
+  min-height: 9rem;
+  padding: var(--space-6, 2rem) var(--space-5, 1.5rem);
+  font-family: var(--font-ui, sans-serif);
+  text-align: center;
+  cursor: pointer;
+  background-color: var(--color-panel, #1c1a18);
+  border: 1px dashed var(--color-border-strong, #5a4f4a);
+  border-radius: var(--radius-lg, 12px);
+  transition:
+    border-color var(--duration-base, 200ms) var(--ease-standard, ease),
+    background-color var(--duration-base, 200ms) var(--ease-standard, ease),
+    box-shadow var(--duration-base, 200ms) var(--ease-standard, ease);
+}
+
+.doc-dropzone:where(:hover) {
+  border-color: color-mix(in srgb, var(--color-primary, #e8735c) 55%, var(--color-border-strong, #5a4f4a));
+  background-color: var(--color-panel-high, #242221);
+}
+
+.doc-dropzone:focus-visible {
+  outline: 2px solid var(--color-primary, #e8735c);
+  outline-offset: 3px;
+  border-color: var(--color-primary, #e8735c);
+}
+
+/* A file is over the zone. Solid edge and a real fill: this is the one moment
+   the drop target gets to be loud. */
+.doc-dropzone.is-dragging {
+  border-style: solid;
+  border-color: var(--color-primary, #e8735c);
+  background-color: color-mix(in srgb, var(--color-primary, #e8735c) 10%, var(--color-panel, #1c1a18));
+  box-shadow: var(--shadow-glow, 0 0 0 1px rgba(232, 115, 92, 0.24));
+}
+
+.doc-dropzone.is-dragging .doc-dropzone-glyph {
+  color: var(--color-primary, #e8735c);
+  transform: translateY(-2px);
+}
+
+.doc-dropzone.is-invalid {
+  border-color: var(--color-error, #ef4444);
+}
+
+.doc-dropzone-glyph {
+  font-size: 1.75rem;
+  line-height: 1;
+  color: var(--color-text-subtle, #a89a91);
+  transition:
+    color var(--duration-base, 200ms) var(--ease-standard, ease),
+    transform var(--duration-base, 200ms) var(--ease-standard, ease);
+}
+
+.doc-dropzone-title {
+  display: block;
+  font-size: var(--text-base, 1rem);
+  font-weight: 500;
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text, #e8e2d8);
+  /* The picked filename can be long, and it must not widen the dropzone. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.doc-dropzone-hint {
+  display: block;
+  font-size: var(--text-xs, 0.75rem);
+  letter-spacing: 0.04em;
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.doc-dropzone-error {
+  font-family: var(--font-ui, sans-serif);
+}
+
+.doc-dropzone-error .material-symbols-outlined {
+  flex-shrink: 0;
+  font-size: var(--text-base, 1rem);
+}
+
+/* ---------- 3. Upload actions ---------- */
+
+.doc-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+/* ---------- 4. URL row ---------- */
+
+.doc-url-form {
+  padding-top: var(--space-4, 1rem);
+  border-top: 1px solid var(--color-border, #332f2b);
+}
+
+.doc-url-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+}
+
+.doc-url-controls {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2, 0.5rem);
+}
+
+.doc-url-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.doc-url-controls .dm-btn {
+  flex-shrink: 0;
+}
+
+.doc-url-error {
+  font-family: var(--font-ui, sans-serif);
+}
+
+.doc-url-error .material-symbols-outlined {
+  flex-shrink: 0;
+  font-size: var(--text-base, 1rem);
+}
+
+/* ---------- 5. Progress ---------- */
+
+/* Progress replaces the dropzone's role: the file is gone to the server, and
+   the only honest thing to show is where the task is. */
+.doc-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-4, 1rem);
+  background-color: var(--color-panel, #1c1a18);
+  border: 1px solid var(--color-border, #332f2b);
+  border-left: 2px solid var(--color-primary, #e8735c);
+  border-radius: var(--radius-md, 8px);
+}
+
+.doc-progress-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text, #e8e2d8);
+}
+
+.doc-progress-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-width: 2px;
+  flex-shrink: 0;
+}
+
+.doc-progress-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-progress-status {
+  flex-shrink: 0;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.doc-progress-track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  background-color: var(--color-bg, #121110);
+  border-radius: var(--radius-pill, 999px);
+}
+
+.doc-progress-fill {
+  height: 100%;
+  background-color: var(--color-primary, #e8735c);
+  border-radius: inherit;
+  transition: width var(--duration-slow, 320ms) var(--ease-standard, ease);
+}
+
+.doc-progress-message {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text-muted, #b8afa6);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 6. Failure block ---------- */
+
+/* A failed upload states what failed, why, and offers one way out. It stays
+   until dismissed, because a message that vanishes on its own takes the error
+   with it. */
+.doc-upload-failed {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3, 0.75rem);
+  padding: var(--space-4, 1rem);
+  background-color: var(--color-panel, #1c1a18);
+  border: 1px solid var(--color-border, #332f2b);
+  border-left: 2px solid var(--color-error, #ef4444);
+  border-radius: var(--radius-md, 8px);
+}
+
+.doc-upload-failed-glyph {
+  flex-shrink: 0;
+  font-size: var(--text-lg, 1.125rem);
+  line-height: 1.4;
+  color: var(--color-error, #ef4444);
+}
+
+.doc-upload-failed-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+}
+
+.doc-upload-failed-title {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text, #e8e2d8);
+}
+
+.doc-upload-failed-reason {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text-muted, #b8afa6);
+  overflow-wrap: anywhere;
+}
+
+.doc-upload-failed-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+}
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 767px) {
+  .doc-dropzone {
+    min-height: 7.5rem;
+    padding: var(--space-5, 1.5rem) var(--space-4, 1rem);
+  }
+
+  /* The button drops under the field rather than squeezing it. */
+  .doc-url-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .doc-upload-failed {
+    flex-wrap: wrap;
+  }
+
+  .doc-upload-failed-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-dropzone,
+  .doc-dropzone-glyph,
+  .doc-progress-fill {
+    transition: none;
+  }
+
+  .doc-dropzone.is-dragging .doc-dropzone-glyph {
+    transform: none;
+  }
+}

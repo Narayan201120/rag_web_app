@@ -539,6 +539,119 @@
   flex: 0 0 auto;
 }
 
+/* ---------- 7b. Collection row menu, rename and delete confirm ----------
+ *
+ * Everything below is new. No rule in the numbered sections was changed, so
+ * each of these sets properties the earlier rules leave alone.
+ */
+
+/* The row now has two cells on its first line: the toggle and the menu
+   trigger. A grid handles that without touching the toggle's own layout, which
+   is already a grid. */
+.app-collection-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.app-collection-main,
+.app-collection-rename {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+
+.app-collection-actions {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* Documents sit under both cells. */
+.app-collection-docs {
+  grid-column: 1 / -1;
+}
+
+/* The row menu. Scoped apart from .app-collection-menu, which the document
+   menus use: those sit in normal flow, this one anchors to the row. Pair it
+   with .app-menu, which brings the panel, the edge, and the entrance. */
+.app-collection-row-menu {
+  min-width: 13rem;
+}
+
+/* The rename form replaces the row, so it owns the same inset the button had. */
+.app-collection-rename {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+}
+
+.app-collection-rename-input {
+  width: 100%;
+}
+
+/* Sits under the input, inside the row. */
+.app-collection-rename-error {
+  font-family: var(--font-ui);
+  font-size: 0.6875rem;
+  line-height: var(--leading-normal);
+  color: var(--color-error);
+}
+
+/* The trigger cell of a collection row. Kept in flow at zero opacity so the
+   title and the count never shift when it appears. */
+.app-collection-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding-right: var(--space-1);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    visibility 0s linear var(--duration-fast);
+}
+
+.app-collection-item:where(:hover, :focus-within) .app-collection-actions {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    visibility 0s linear 0s;
+}
+
+/* Above the rail, which sits at --z-modal. The dm primitive hardcodes 1000,
+   which ties with it, so the confirm claims the next step up the scale. */
+.app-collection-confirm-overlay {
+  z-index: var(--z-toast);
+}
+
+/* Borrows the dm-modal primitives. Only the width narrows: the dm default of
+   32rem suits a form, not a two-button answer. */
+.app-collection-confirm {
+  max-width: 26rem;
+}
+
+.app-collection-confirm-title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: var(--leading-normal);
+  color: var(--color-text);
+}
+
+.app-collection-confirm-body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--color-text-muted);
+}
+
 /* ---------- 8. Menus ---------- */
 
 /* Anchored to the row that owns it. Right-aligned so the panel hangs into the
@@ -771,7 +884,7 @@
 
 /* Scroll ownership, page by page. Chat keeps its own layout: .chat-area
    already scrolls inside .app-main, so it is left alone here. */
-.app-main > .documents-container,
+.app-main > .doc-page,
 .app-main > .search-container,
 .app-main > .settings-container,
 .app-main > .account-container,
@@ -794,6 +907,14 @@
 @media (hover: none) {
   .app-conversation-actions,
   .app-collection-doc-actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  /* Same reveal as the rows above, stated separately so nothing they own is
+     rewritten. */
+  .app-collection-actions {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
@@ -922,7 +1043,7 @@
   }
 
   /* Room for the floating toggle, which sits over the page's top-left. */
-  .app-main > .documents-container,
+  .app-main > .doc-page,
   .app-main > .search-container,
   .app-main > .settings-container,
   .app-main > .account-container,

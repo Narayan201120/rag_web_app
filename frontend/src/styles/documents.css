@@ -1,0 +1,587 @@
+/* Documents page: the library.
+ *
+ * A row is a shelf label. Type on the left, name in the middle, collection and
+ * actions on the right. Rows stay flat on the page surface, not as cards: a
+ * hundred files should read as a list, not as a wall.
+ *
+ * Every selector carries the doc- prefix. Legacy App.css names
+ * (.documents-container, .doc-item, .doc-info, .doc-actions, .doc-confirm-*)
+ * are all gone from the markup, so nothing here has to fight them.
+ *
+ * Contents:
+ *   1. Page frame
+ *   2. Notices
+ *   3. Rows
+ *   4. Type badge
+ *   5. Name, meta, rename editor
+ *   6. Collection chip and menus
+ *   7. Actions menu
+ *   8. Empty state and skeletons
+ *   9. Delete dialog
+ *  10. Narrow screens and touch
+ */
+
+/* ---------- 1. Page frame ---------- */
+
+.doc-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5, 1.5rem);
+  /* .app-main hands scroll to its page children; this replaces
+     .documents-container, which no longer exists. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  width: 100%;
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--space-7, 2.5rem) var(--space-5, 1.5rem) var(--space-10, 4rem);
+}
+
+.doc-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4, 1rem);
+}
+
+.doc-page-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  min-width: 0;
+}
+
+.doc-page-title {
+  font-family: var(--font-reading, Georgia, serif);
+  font-size: var(--text-3xl, 1.875rem);
+  font-weight: 500;
+  line-height: var(--leading-tight, 1.15);
+  letter-spacing: -0.015em;
+  color: var(--color-text, #e8e2d8);
+}
+
+.doc-page-subtitle {
+  max-width: 44rem;
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-relaxed, 1.65);
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.doc-page-count {
+  flex-shrink: 0;
+  margin-top: var(--space-2, 0.5rem);
+}
+
+/* ---------- 2. Notices ---------- */
+
+/* Toasts are the only status channel on this page. Success clears itself;
+   errors stay until dismissed. */
+.doc-notices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+}
+
+.doc-notice-glyph {
+  flex-shrink: 0;
+  font-size: var(--text-lg, 1.125rem);
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.dm-toast-success .doc-notice-glyph {
+  color: var(--color-success, #5e9b8c);
+}
+
+.dm-toast-error .doc-notice-glyph {
+  color: var(--color-error, #ef4444);
+}
+
+.doc-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.doc-notice-dismiss {
+  flex-shrink: 0;
+  margin: -0.25rem -0.375rem -0.25rem 0;
+  color: var(--color-text-subtle, #a89a91);
+}
+
+/* ---------- 3. Rows ---------- */
+
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 0.75rem);
+}
+
+.doc-list-heading {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-text-muted, #b8afa6);
+  outline: none;
+}
+
+.doc-rows {
+  display: flex;
+  flex-direction: column;
+  /* A hairline above the list. Rows carry separators between themselves, so
+     this is the only edge the list needs. */
+  border-top: 1px solid var(--color-border, #332f2b);
+}
+
+.doc-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  padding: var(--space-3, 0.75rem) var(--space-2, 0.5rem);
+  border-bottom: 1px solid var(--color-border, #332f2b);
+  transition: background-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+
+.doc-row:hover {
+  background-color: color-mix(in srgb, var(--color-panel, #1c1a18) 55%, transparent);
+}
+
+/* Keyboard focus lands on the row's own controls. The tint marks the row that
+   currently holds focus, so the ring and the row read as one target. */
+.doc-row:has(:focus-visible) {
+  background-color: color-mix(in srgb, var(--color-primary, #e8735c) 8%, transparent);
+}
+
+.doc-row.is-editing {
+  background-color: color-mix(in srgb, var(--color-primary, #e8735c) 6%, transparent);
+}
+
+.doc-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+/* ---------- 4. Type badge ---------- */
+
+/* Type is a fact, not a status, so it wears the neutral badge and lets the
+   glyph carry the distinction. */
+.doc-type {
+  flex-shrink: 0;
+  justify-self: start;
+  padding: 0 var(--space-2, 0.5rem);
+  border: 1px solid var(--color-border, #332f2b);
+  border-radius: var(--radius-sm, 4px);
+  background-color: var(--color-bg-raised, #171614);
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.doc-type .material-symbols-outlined {
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1;
+}
+
+.doc-type-label {
+  letter-spacing: 0.02em;
+}
+
+/* PDF is the one type worth spotting from across the room. Everything else
+   stays neutral, because tinting every badge turns a type column into noise. */
+.doc-type[data-type="picture_as_pdf"] {
+  color: var(--color-primary, #e8735c);
+  border-color: color-mix(in srgb, var(--color-primary, #e8735c) 35%, var(--color-border, #332f2b));
+}
+
+/* ---------- 5. Name, meta, rename editor ---------- */
+
+/* The filename is the row's label and the thing you act on, so it is a button
+   with the weight of a heading rather than a span that happens to be clickable. */
+.doc-name {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 500;
+  line-height: var(--leading-normal, 1.5);
+  text-align: left;
+  color: var(--color-text, #e8e2d8);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* An underline that only shows on hover or focus. Without it a button reads
+     as an action; with it, as a link to the rename editor. */
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.25em;
+  border-radius: var(--radius-xs, 2px);
+  transition:
+    color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    text-decoration-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+
+.doc-name:where(:hover, :focus-visible) {
+  color: var(--color-primary, #e8735c);
+  text-decoration-color: currentColor;
+}
+
+.doc-name:focus-visible {
+  outline: 2px solid var(--color-primary, #e8735c);
+  outline-offset: 3px;
+}
+
+/* Size and date are reference values. Mono so the digits line up down the
+   column, and small so they never compete with the filename. */
+.doc-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-xs, 0.75rem);
+  line-height: 1.4;
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.doc-meta-sep {
+  color: var(--color-border-strong, #5a4f4a);
+}
+
+.doc-rename {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+}
+
+.doc-rename-input {
+  min-height: 32px;
+  padding: 0 var(--space-2, 0.5rem);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 0.875rem);
+  /* The editor sits inside a 32px row, so the ring has to stay inside it or
+     it clips against the separator below. */
+  outline-offset: 1px;
+}
+
+.doc-row-error {
+  margin-top: var(--space-1, 0.25rem);
+  font-family: var(--font-ui, sans-serif);
+}
+
+/* ---------- 6. Collection chip and menus ---------- */
+
+/* The anchor is the positioning context for its menu and the boundary the
+   outside-click listener in Documents.js uses to decide what counts as
+   inside. Both jobs live on one class so they cannot drift apart. */
+.doc-menu-anchor {
+  position: relative;
+}
+
+.doc-collection-cell {
+  flex-shrink: 0;
+}
+
+/* A chip, not a select. It shows where the file is now and opens the list of
+   everywhere else it could go. An unset membership still says so out loud. */
+.doc-collection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 0.25rem);
+  max-width: 14rem;
+  min-height: 28px;
+  padding: 0 var(--space-2, 0.5rem);
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-xs, 0.75rem);
+  line-height: 1;
+  color: var(--color-text-subtle, #a89a91);
+  background-color: transparent;
+  border: 1px dashed var(--color-border-strong, #5a4f4a);
+  border-radius: var(--radius-pill, 999px);
+  transition:
+    color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    border-color var(--duration-fast, 120ms) var(--ease-standard, ease),
+    background-color var(--duration-fast, 120ms) var(--ease-standard, ease);
+}
+
+.doc-collection-chip .material-symbols-outlined {
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1;
+}
+
+.doc-collection-chip.has-collection {
+  color: var(--color-text, #e8e2d8);
+  border-style: solid;
+  border-color: var(--color-border, #332f2b);
+  background-color: var(--color-bg-raised, #171614);
+}
+
+.doc-collection-chip:where(:hover, :focus-visible) {
+  color: var(--color-text, #e8e2d8);
+  border-color: var(--color-primary, #e8735c);
+  background-color: color-mix(in srgb, var(--color-primary, #e8735c) 10%, transparent);
+}
+
+.doc-collection-chip:focus-visible {
+  outline: 2px solid var(--color-primary, #e8735c);
+  outline-offset: 2px;
+}
+
+.doc-collection-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-collection-caret {
+  font-size: var(--text-base, 1rem) !important;
+  margin-right: -0.125rem;
+}
+
+/* Both menus drop from their own anchor, right-aligned so they never run off
+   the page. */
+.doc-menu {
+  position: absolute;
+  top: calc(100% + var(--space-1, 0.25rem));
+  right: 0;
+  z-index: var(--z-dropdown, 400);
+  min-width: 13rem;
+  animation: doc-menu-in var(--duration-base, 200ms) var(--ease-standard, ease) both;
+}
+
+@keyframes doc-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.doc-menu .material-symbols-outlined {
+  flex-shrink: 0;
+  font-size: var(--text-base, 1rem);
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.doc-menu .dm-menu-item-danger .material-symbols-outlined {
+  color: currentColor;
+}
+
+.doc-menu-item-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The check column is a fixed width so names start at the same x on every
+   line whether or not the current collection is drawn with a check. */
+.doc-menu-check {
+  width: 1.125rem;
+  text-align: center;
+}
+
+.dm-menu-item[aria-checked="true"] {
+  color: var(--color-primary, #e8735c);
+}
+
+.dm-menu-item[aria-checked="true"] .doc-menu-check {
+  color: var(--color-primary, #e8735c);
+}
+
+.doc-menu-empty {
+  display: block;
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.doc-menu .dm-divider {
+  margin: var(--space-1, 0.25rem) 0;
+}
+
+/* ---------- 7. Actions menu ---------- */
+
+.doc-row-actions {
+  flex-shrink: 0;
+  /* Hidden until the row is hovered, focused, or open. opacity and visibility
+     keep it out of the tab order without a display toggle, which would kill
+     the opening transition. */
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--duration-fast, 120ms) var(--ease-standard, ease),
+    visibility 0s linear var(--duration-fast, 120ms);
+}
+
+.doc-row:hover .doc-row-actions,
+.doc-row:focus-within .doc-row-actions,
+.doc-row-actions:focus-within {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity var(--duration-fast, 120ms) var(--ease-standard, ease),
+    visibility 0s linear 0s;
+}
+
+.doc-row-menu-button {
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.doc-row-menu-button[aria-expanded="true"] {
+  background-color: color-mix(in srgb, var(--color-text, #e8e2d8) 10%, transparent);
+  color: var(--color-text, #e8e2d8);
+}
+
+/* ---------- 8. Empty state and skeletons ---------- */
+
+.doc-empty {
+  padding: var(--space-9, 4rem) var(--space-4, 1rem);
+  border-top: 1px solid var(--color-border, #332f2b);
+}
+
+.doc-empty .dm-empty-state-icon {
+  font-size: 1.5rem;
+}
+
+.doc-row-loading {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr) 6rem;
+  gap: var(--space-4, 1rem);
+}
+
+.doc-skeleton-badge {
+  width: 4.5rem;
+  height: 1.25rem;
+}
+
+.doc-skeleton-name {
+  height: 1rem;
+}
+
+.doc-skeleton-meta {
+  width: 6rem;
+  height: 0.75rem;
+  justify-self: end;
+}
+
+/* ---------- 9. Delete dialog ---------- */
+
+.doc-delete-dialog {
+  max-width: 26rem;
+}
+
+.doc-delete-dialog .dm-modal-title {
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-lg, 1.125rem);
+  font-weight: 600;
+  line-height: var(--leading-tight, 1.15);
+  color: var(--color-text, #e8e2d8);
+}
+
+.doc-delete-name {
+  margin-bottom: var(--space-4, 1rem);
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #e8e2d8);
+  background-color: var(--color-bg, #121110);
+  border: 1px solid var(--color-border, #332f2b);
+  border-radius: var(--radius-sm, 4px);
+  overflow-wrap: anywhere;
+}
+
+/* The consequence, spelled out. Three lines, no hedging. */
+.doc-delete-consequence {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2, 0.5rem);
+  padding-left: var(--space-5, 1.5rem);
+  font-family: var(--font-ui, sans-serif);
+  font-size: var(--text-sm, 0.875rem);
+  line-height: var(--leading-normal, 1.5);
+  color: var(--color-text-muted, #b8afa6);
+}
+
+.doc-delete-consequence li::marker {
+  color: var(--color-text-subtle, #a89a91);
+}
+
+.doc-delete-dialog .dm-btn-danger .dm-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-width: 2px;
+  border-top-color: var(--color-on-error, #1a0503);
+}
+
+/* ---------- 10. Narrow screens and touch ---------- */
+
+/* The collection chip is the first thing to go when the row runs out of
+   room. The menu still opens it, so nothing becomes unreachable. */
+@media (max-width: 767px) {
+  .doc-page {
+    padding: var(--space-5, 1.5rem) var(--space-4, 1rem) var(--space-9, 4rem);
+  }
+
+  .doc-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .doc-collection-cell {
+    grid-column: 2 / -1;
+    justify-self: start;
+  }
+
+  .doc-collection-chip {
+    max-width: 100%;
+  }
+
+  .doc-meta {
+    flex-wrap: wrap;
+  }
+
+  .doc-delete-dialog {
+    max-width: 100%;
+  }
+}
+
+/* A pointer that cannot hover never gets a hover to reveal the actions, so
+   they stay in the open and grow to a fingertip size. */
+@media (hover: none) {
+  .doc-row-actions {
+    opacity: 1;
+    visibility: visible;
+    transition: none;
+  }
+
+  .doc-row-menu-button {
+    width: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .doc-collection-chip {
+    min-height: 32px;
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-menu {
+    animation: none !important;
+  }
+
+  .doc-row-actions {
+    transition: none;
+  }
+}

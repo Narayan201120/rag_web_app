@@ -11,6 +11,15 @@
   padding: 0;
 }
 
+/* Several surfaces (sidebar lists, the document rows, the empty-state prompts)
+   are semantic lists used purely for grouping, so they must not render the
+   browser's markers. Where markers carry meaning, such as inside a document
+   preview, the reading styles opt back in with an explicit list-style. */
+ul,
+ol {
+  list-style: none;
+}
+
 /* ---------- Document setup ---------- */
 
 html {

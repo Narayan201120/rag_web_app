@@ -440,13 +440,22 @@ function Settings({ onLogout }) {
                                     <select
                                         id="set-model"
                                         className="dm-select"
-                                        value={model}
+                                        value={providerModels[provider] ? model : ''}
                                         onChange={(e) => setModel(e.target.value)}
+                                        disabled={!providerModels[provider]}
                                     >
-                                        {(providerModels[provider] || ['custom-model']).map((m) => (
-                                            <option key={m} value={m}>{m}</option>
-                                        ))}
+                                        {providerModels[provider]
+                                            ? providerModels[provider].map((m) => (
+                                                <option key={m} value={m}>{m}</option>
+                                            ))
+                                            : <option value="">No models available</option>}
                                     </select>
+                                    {!providerModels[provider] && (
+                                        <p className="dm-help">
+                                            This provider returned no models. Check that you are signed in
+                                            and try again.
+                                        </p>
+                                    )}
                                 </div>
 
                                 <div className="dm-field">

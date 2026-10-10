@@ -451,6 +451,113 @@ class AuthAndTaskEndpointSmokeTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_settings_api_key_offers_groq_with_a_model_catalog(self):
+        self.api_client.force_authenticate(user=self.user)
+
+        response = self.api_client.get("/api/settings/api-key/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertIn("groq", body["supported_providers"])
+        groq_models = body["provider_models"].get("groq")
+        self.assertIsNotNone(groq_models)
+        self.assertTrue(groq_models)
+        for model in groq_models:
+            self.assertIsInstance(model, str)
+            self.assertTrue(model.strip())
+
+    def test_settings_api_key_accepts_groq_with_a_catalog_model(self):
+        from api.models import UserProfile
+
+        self.api_client.force_authenticate(user=self.user)
+
+        response = self.api_client.post(
+            "/api/settings/api-key/",
+            {"provider": "groq", "model": "llama-3.3-70b-versatile", "api_key": "gsk-test-key"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json().get("message"),
+            "Provider, model, and API key saved successfully.",
+        )
+        profile = UserProfile.objects.get(user=self.user)
+        self.assertEqual(profile.llm_provider, "groq")
+        self.assertEqual(profile.llm_model, "llama-3.3-70b-versatile")
+
+        get_response = self.api_client.get("/api/settings/api-key/")
+        self.assertEqual(get_response.status_code, 200)
+        self.assertEqual(get_response.json().get("provider"), "groq")
+        self.assertEqual(get_response.json().get("model"), "llama-3.3-70b-versatile")
+
+    def test_settings_api_key_rejects_a_foreign_model_for_groq(self):
+        self.api_client.force_authenticate(user=self.user)
+
+        response = self.api_client.post(
+            "/api/settings/api-key/",
+            {"provider": "groq", "model": "gpt-6.1-sol", "api_key": "gsk-test-key"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("api.generator._generate_with_openai_compatible")
+    def test_groq_generation_uses_the_groq_base_url(self, mock_compatible):
+        mock_compatible.return_value = "Answer from Groq."
+        from api.generator import generate_answer
+
+        result = generate_answer(
+            "What is the refund policy?",
+            [{"text": "Refunds within 24 hours."}],
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+            api_key="gsk-test-key",
+        )
+
+        self.assertEqual(result, "Answer from Groq.")
+        mock_compatible.assert_called_once()
+        args = mock_compatible.call_args.args
+        self.assertEqual(args[1], "gsk-test-key")
+        self.assertEqual(args[2], "llama-3.3-70b-versatile")
+        self.assertEqual(args[3], "https://api.groq.com/openai/v1")
+
+    @patch("api.generator._stream_openai_compatible")
+    def test_groq_streaming_uses_the_groq_base_url(self, mock_stream):
+        from api.generator import generate_answer_stream
+
+        list(generate_answer_stream(
+            "What is the refund policy?",
+            [{"text": "Refunds within 24 hours."}],
+            provider="groq",
+            model="openai/gpt-oss-120b",
+            api_key="gsk-test-key",
+        ))
+
+        mock_stream.assert_called_once()
+        args = mock_stream.call_args.args
+        self.assertEqual(args[2], "openai/gpt-oss-120b")
+        self.assertEqual(args[3], "https://api.groq.com/openai/v1")
+
+    @patch.dict(os.environ, {"GROQ_BASE_URL": "https://groq.internal.test/v1"})
+    @patch("api.generator._generate_with_openai_compatible")
+    def test_groq_base_url_can_be_overridden_by_env(self, mock_compatible):
+        mock_compatible.return_value = "Answer."
+        from api.generator import generate_answer
+
+        generate_answer(
+            "Question?",
+            [{"text": "Context."}],
+            provider="groq",
+            model="llama-3.1-8b-instant",
+            api_key="gsk-test-key",
+        )
+
+        self.assertEqual(
+            mock_compatible.call_args.args[3],
+            "https://groq.internal.test/v1",
+        )
+
     def test_task_status_and_cancel_success(self):
         task = Task.objects.create(
             user=self.user,

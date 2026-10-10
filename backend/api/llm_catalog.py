@@ -52,6 +52,14 @@ PROVIDER_MODELS = {
         "llama-4-scout",
         "llama-4-maverick",
     ],
+    "groq": [
+        "llama-3.3-70b-versatile",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+        "minimaxai/minimax-m2.7",
+        "llama-3.1-8b-instant",
+    ],
     "other": [
         "custom-model",
     ],

@@ -15,6 +15,7 @@ const PROVIDER_LABELS = {
     qwen: 'Qwen',
     minimax: 'MiniMax',
     'meta-llama': 'Meta Llama',
+    groq: 'Groq',
     other: 'Other',
 };
 
@@ -27,6 +28,7 @@ const DEFAULT_PROVIDERS = [
     'qwen',
     'minimax',
     'meta-llama',
+    'groq',
     'other',
 ];
 

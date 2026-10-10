@@ -9,7 +9,7 @@ A full-stack Retrieval-Augmented Generation (RAG) application that lets you uplo
 - **Multi-source ingestion** — upload PDFs, DOCX, Markdown, and plain text files, or paste a URL to scrape and index web pages
 - **Semantic search** — FAISS-powered vector search using `sentence-transformers` embeddings
 - **Cross-encoder reranking** — improves retrieval precision by reranking top candidates before generation
-- **Multi-provider LLM support** — works with Google Gemini, OpenAI, Anthropic, Mistral, xAI, Qwen, MiniMax, Meta Llama, and more
+- **Multi-provider LLM support** — works with Google Gemini, OpenAI, Anthropic, Mistral, xAI, Qwen, MiniMax, Meta Llama, Groq, and more
 - **Per-user isolation** — documents, indexes, and API keys are scoped to individual accounts
 - **Chat history** — persisted conversation history with source citations and feedback
 - **Document preview** — rendered Markdown with KaTeX math typesetting in the document viewer

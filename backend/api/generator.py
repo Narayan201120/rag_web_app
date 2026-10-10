@@ -259,6 +259,14 @@ def _generate_with_provider(provider, model, key, prompt, max_tokens=1200):
                 os.getenv("LLAMA_BASE_URL", "https://api.llama.com/compat/v1"),
                 max_tokens=max_tokens,
             )
+        if provider == "groq":
+            return _generate_with_openai_compatible(
+                prompt,
+                key,
+                model,
+                os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+                max_tokens=max_tokens,
+            )
         if provider == "anthropic":
             return _generate_with_anthropic(prompt, key, model, max_tokens=max_tokens)
         if provider == "other":
@@ -325,6 +333,12 @@ def _stream_with_provider(provider, model, key, prompt, max_tokens=1200):
             return _stream_openai_compatible(
                 prompt, key, model,
                 os.getenv("LLAMA_BASE_URL", "https://api.llama.com/compat/v1"),
+                max_tokens=max_tokens,
+            )
+        if provider == "groq":
+            return _stream_openai_compatible(
+                prompt, key, model,
+                os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
                 max_tokens=max_tokens,
             )
         if provider == "anthropic":

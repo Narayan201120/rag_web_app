@@ -105,6 +105,7 @@ class UserProfile(models.Model):
         ("qwen", "Qwen"),
         ("minimax", "MiniMax"),
         ("meta-llama", "Meta Llama"),
+        ("groq", "Groq"),
         ("other", "Other"),
     ]
 

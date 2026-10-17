@@ -1354,6 +1354,194 @@ class EncryptionTests(TestCase):
         self.assertEqual(decrypt_value(stored), "sk-test-key")
 
 
+class DocumentIndexIsolationTests(TestCase):
+    """A failed build must never fall back to another account's documents."""
+
+    def setUp(self):
+        import api.views as api_views
+
+        self.api_views = api_views
+        self.original_load_documents = api_views.load_documents
+        self.owner = User.objects.create_user(username="owner", password="OwnerPass123!")
+        self.other = User.objects.create_user(username="other", password="OtherPass123!")
+
+    def tearDown(self):
+        api_views = self.api_views
+        api_views.load_documents = self.original_load_documents
+        api_views._forget_document_index(self.owner.id)
+        api_views._forget_document_index(self.other.id)
+
+    @staticmethod
+    def _state(user_id, docs):
+        return SimpleNamespace(
+            user_id=user_id,
+            signature=("a.txt", 10, 10),
+            docs=docs,
+            chunk_sources=["a.txt"] * len(docs),
+            index=SimpleNamespace(ntotal=len(docs), d=4),
+            embeddings=object(),
+            bm25_index=object(),
+            bm25_tokenized=object(),
+        )
+
+    def test_failed_build_for_one_user_does_not_serve_another_users_chunks(self):
+        api_views = self.api_views
+        api_views._forget_document_index(self.owner.id)
+        api_views._forget_document_index(self.other.id)
+        try:
+            api_views._activate_document_index(
+                self._state(self.owner.id, ["owner private chunk"])
+            )
+
+            # The loader fails for the second account by returning a non-state.
+            api_views.load_documents = lambda *a, **k: None
+
+            served = api_views.get_document_index(self.other)
+
+            self.assertNotIn("owner private chunk", list(served.docs))
+            self.assertNotEqual(getattr(served, "user_id", None), self.owner.id)
+        finally:
+            api_views.load_documents = self.original_load_documents
+            api_views._forget_document_index(self.owner.id)
+            api_views._forget_document_index(self.other.id)
+
+
+class EvaluationApiKeyHandlingTests(TestCase):
+    """The evaluation views must use the decrypted provider key and clean up after themselves."""
+
+    ENCRYPTION_KEY = "Hj__dnfe_0aVSpiv88KiW4ANcyfQZZpPYJGSIM1Pr1Q="
+    PLAINTEXT_KEY = "sk-real-plaintext-key"
+
+    class FakeMetric:
+        def __init__(self, *args, **kwargs):
+            self.score = 0.5
+
+        def measure(self, test_case):
+            return 0.5
+
+    def setUp(self):
+        from api.models import EvaluationDataset
+
+        self.user = User.objects.create_user(
+            username="evaluser", email="eval@example.com", password="EvalPass123!"
+        )
+        self.api_client = APIClient()
+        self.api_client.force_authenticate(user=self.user)
+        self.dataset_item = EvaluationDataset.objects.create(
+            user=self.user,
+            question="What is the refund window?",
+            expected_answer="24 hours",
+        )
+
+    def _profile_with_key(self):
+        from api.encryption import encrypt_value
+        from api.models import UserProfile
+
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.llm_provider = "openai"
+        profile.llm_model = "gpt-6.1-sol"
+        profile.llm_api_key = encrypt_value(self.PLAINTEXT_KEY)
+        profile.save()
+        return profile
+
+    @staticmethod
+    def _fake_index():
+        return SimpleNamespace(
+            docs=["chunk one", "chunk two", "chunk three"],
+            chunk_sources=["a.txt", "a.txt", "b.txt"],
+            index=SimpleNamespace(ntotal=3, d=4),
+            embeddings=object(),
+            bm25_index=object(),
+            bm25_tokenized=object(),
+            user_id=1,
+        )
+
+    @override_settings(FIELD_ENCRYPTION_KEY=ENCRYPTION_KEY)
+    @patch("api.generator.generate_answer")
+    @patch("api.views.get_document_index")
+    def test_generate_questions_sends_the_decrypted_provider_key(self, mock_index, mock_generate):
+        self._profile_with_key()
+        mock_index.return_value = self._fake_index()
+        mock_generate.return_value = '{"question": "Q?", "expected_answer": "A"}'
+
+        response = self.api_client.post("/api/evaluate/generate/", {"num_questions": 1}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(mock_generate.called)
+        used_key = mock_generate.call_args.kwargs["api_key"]
+        self.assertEqual(used_key, self.PLAINTEXT_KEY)
+        self.assertFalse(used_key.startswith("enc:"))
+
+    @override_settings(FIELD_ENCRYPTION_KEY=ENCRYPTION_KEY)
+    @patch("deepeval.metrics.FaithfulnessMetric", FakeMetric)
+    @patch("deepeval.metrics.AnswerRelevancyMetric", FakeMetric)
+    @patch("deepeval.metrics.ContextualRelevancyMetric", FakeMetric)
+    @patch("api.views.hybrid_search")
+    @patch("api.views.get_document_index")
+    @patch("api.generator.generate_answer")
+    def test_run_evaluation_sends_the_decrypted_provider_key(self, mock_generate, mock_index, mock_search):
+        self._profile_with_key()
+        mock_index.return_value = self._fake_index()
+        mock_search.return_value = (["retrieved context"], [0])
+        mock_generate.return_value = "An answer."
+
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-existing-process-key"}):
+            response = self.api_client.post(
+                "/api/evaluate/run/", {"dataset_id": self.dataset_item.id}, format="json"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        used_key = mock_generate.call_args.kwargs["api_key"]
+        self.assertEqual(used_key, self.PLAINTEXT_KEY)
+        self.assertFalse(used_key.startswith("enc:"))
+
+    @override_settings(FIELD_ENCRYPTION_KEY=ENCRYPTION_KEY)
+    @patch("deepeval.metrics.FaithfulnessMetric", FakeMetric)
+    @patch("deepeval.metrics.AnswerRelevancyMetric", FakeMetric)
+    @patch("deepeval.metrics.ContextualRelevancyMetric", FakeMetric)
+    @patch("api.views.hybrid_search")
+    @patch("api.views.get_document_index")
+    @patch("api.generator.generate_answer")
+    def test_run_evaluation_restores_the_previous_process_key(self, mock_generate, mock_index, mock_search):
+        self._profile_with_key()
+        mock_index.return_value = self._fake_index()
+        mock_search.return_value = (["retrieved context"], [0])
+        mock_generate.return_value = "An answer."
+
+        os.environ["OPENAI_API_KEY"] = "sk-sentinel-value"
+        try:
+            with patch.dict(os.environ):
+                self.api_client.post(
+                    "/api/evaluate/run/", {"dataset_id": self.dataset_item.id}, format="json"
+                )
+                self.assertEqual(os.environ["OPENAI_API_KEY"], "sk-sentinel-value")
+        finally:
+            os.environ["OPENAI_API_KEY"] = "sk-sentinel-value"
+
+    @override_settings(FIELD_ENCRYPTION_KEY=ENCRYPTION_KEY)
+    @patch("deepeval.metrics.FaithfulnessMetric", FakeMetric)
+    @patch("deepeval.metrics.AnswerRelevancyMetric", FakeMetric)
+    @patch("deepeval.metrics.ContextualRelevancyMetric", FakeMetric)
+    @patch("api.views.hybrid_search")
+    @patch("api.views.get_document_index")
+    @patch("api.generator.generate_answer")
+    def test_run_evaluation_removes_a_key_variable_it_added(self, mock_generate, mock_index, mock_search):
+        self._profile_with_key()
+        mock_index.return_value = self._fake_index()
+        mock_search.return_value = (["retrieved context"], [0])
+        mock_generate.return_value = "An answer."
+
+        os.environ.pop("OPENAI_API_KEY", None)
+        try:
+            with patch.dict(os.environ):
+                self.api_client.post(
+                    "/api/evaluate/run/", {"dataset_id": self.dataset_item.id}, format="json"
+                )
+                self.assertNotIn("OPENAI_API_KEY", os.environ)
+        finally:
+            os.environ.pop("OPENAI_API_KEY", None)
+
+
 class CustomExceptionHandlerTests(TestCase):
     """Tests for the custom exception handler."""
 

@@ -20,18 +20,67 @@ def get_reranker():
         _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     return _reranker
 
-def build_index(docs):
-    if not docs:
-        return None, None
+def embed_texts(texts):
+    """Embed chunk strings into a float32 (n, dim) array, or None when empty."""
+    if not texts:
+        return None
     model = get_embedding_model()
-    embeddings = model.encode(docs)
+    embeddings = model.encode(texts, show_progress_bar=False)
     embeddings = np.array(embeddings).astype("float32")
     if len(embeddings.shape) == 1:
         embeddings = embeddings.reshape(1,-1)
+    return embeddings
+
+
+def build_index(docs):
+    if not docs:
+        return None, None
+    embeddings = embed_texts(docs)
     dimension = embeddings.shape[1]
     index = faiss.IndexFlatL2(dimension)
     index.add(embeddings)
     return index, embeddings
+
+
+def clone_index(index):
+    """Return an independent copy of a FAISS index.
+
+    faiss.clone_index copies the underlying vectors, so appending to the clone
+    cannot change the caller's index.
+    """
+    return faiss.clone_index(index)
+
+
+def extend_index(index, embeddings, new_embeddings):
+    """Append new_embeddings to a clone of index and to a copy of embeddings.
+
+    Returns (extended_index, combined_embeddings), or (None, None) when the
+    inputs do not line up. The caller's index, embeddings array and their rows
+    are read only, so requests already using them keep a consistent view.
+    """
+    if index is None or embeddings is None or new_embeddings is None:
+        return None, None
+    try:
+        base = np.asarray(embeddings, dtype="float32")
+        added = np.asarray(new_embeddings, dtype="float32")
+        if added.ndim == 1:
+            added = added.reshape(1, -1)
+        if base.ndim != 2 or added.ndim != 2:
+            return None, None
+        if base.shape[1] != added.shape[1]:
+            return None, None
+        if int(index.ntotal) != base.shape[0] or int(index.d) != base.shape[1]:
+            return None, None
+        extended = clone_index(index)
+        extended.add(np.ascontiguousarray(added))
+        if int(extended.ntotal) != base.shape[0] + added.shape[0]:
+            return None, None
+        combined = np.concatenate([base, added], axis=0)
+    except Exception:
+        return None, None
+    if int(combined.shape[0]) != int(extended.ntotal):
+        return None, None
+    return extended, combined
 
 def search(query, docs, index, embeddings, top_k=3):
     if not docs or index is None or index.ntotal == 0:

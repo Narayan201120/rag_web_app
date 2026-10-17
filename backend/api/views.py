@@ -4,6 +4,9 @@ import socket
 import ipaddress
 import re
 import html as html_lib
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass
 from urllib.parse import urlparse, unquote, parse_qs
 from pathlib import Path
 from django.conf import settings
@@ -11,7 +14,7 @@ from django.http import StreamingHttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from api.retriever import build_index, search, rerank, get_embedding_model, remove_overlapping_chunks, build_bm25_index, hybrid_search
+from api.retriever import build_index, search, rerank, get_embedding_model, remove_overlapping_chunks, build_bm25_index, hybrid_search, embed_texts, extend_index
 from api.generator import generate_answer, generate_answer_stream, test_provider_connection, ProviderAPIError
 from api.chunker import semantic_chunk
 from api.compressor import compress_chunks
@@ -62,6 +65,36 @@ def extract_text_from_file(filepath, filename):
     return ""
 
 
+@dataclass
+class UserDocumentIndex:
+    user_id: int
+    # File signature captured after the build. None means "not cacheable".
+    signature: tuple | None
+    docs: list
+    chunk_sources: list
+    index: object
+    embeddings: object
+    bm25_index: object
+    bm25_tokenized: list
+
+
+def _configured_index_cache_size():
+    try:
+        return max(1, int(os.getenv("RAG_INDEX_CACHE_USERS", "2")))
+    except ValueError:
+        return 2
+
+
+_INDEX_CACHE_SIZE = _configured_index_cache_size()
+# One initial load plus one retry when the files move during the read.
+_MAX_STABLE_LOAD_ATTEMPTS = 2
+_index_cache = OrderedDict()
+_index_cache_lock = threading.RLock()
+_build_lock_entries = {}
+_active_state = None
+
+# Compatibility aliases for existing admin code and external integrations.
+# Request handlers use the UserDocumentIndex returned for their own user.
 docs = []
 chunk_sources = []
 index = None
@@ -69,6 +102,173 @@ embeddings = None
 bm25_index = None
 bm25_tokenized = []
 _documents_loaded = False
+
+
+class _BuildLock:
+    """Per-user build gate. The waiter count lets the entry be reclaimed safely."""
+
+    __slots__ = ("lock", "waiters")
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.waiters = 0
+
+
+def _list_document_files(user_dir):
+    """Return the sorted file names load_documents reads, so signatures match it."""
+    try:
+        with os.scandir(user_dir) as entries:
+            names = [
+                entry.name for entry in entries
+                if entry.name.lower().endswith(SUPPORTED_EXTENSIONS) and entry.is_file()
+            ]
+    except FileNotFoundError:
+        return []
+    names.sort()
+    return names
+
+
+def _document_signature(user):
+    """Return (name, size, mtime) for every document file, or None if unstable."""
+    user_dir = _user_doc_dir(user)
+    signature = []
+    try:
+        with os.scandir(user_dir) as entries:
+            for entry in entries:
+                if not entry.name.lower().endswith(SUPPORTED_EXTENSIONS):
+                    continue
+                try:
+                    if not entry.is_file():
+                        continue
+                    entry_stat = entry.stat()
+                except OSError:
+                    # The file changed while listing. Callers treat None as a miss.
+                    return None
+                signature.append((entry.name, entry_stat.st_size, entry_stat.st_mtime_ns))
+    except FileNotFoundError:
+        return ()
+    signature.sort()
+    return tuple(signature)
+
+
+def _acquire_build_slot(user_id):
+    """Return the per-user build gate, creating one only when no thread holds it."""
+    with _index_cache_lock:
+        entry = _build_lock_entries.get(user_id)
+        if entry is None:
+            entry = _BuildLock()
+            _build_lock_entries[user_id] = entry
+        entry.waiters += 1
+        return entry
+
+
+def _release_build_slot(user_id, entry):
+    with _index_cache_lock:
+        entry.waiters -= 1
+        # Keep the gate for cached users so later rebuilds serialize; reclaim the rest.
+        if (
+            entry.waiters <= 0
+            and _build_lock_entries.get(user_id) is entry
+            and user_id not in _index_cache
+        ):
+            _build_lock_entries.pop(user_id, None)
+
+
+def _forget_build_lock(user_id):
+    with _index_cache_lock:
+        entry = _build_lock_entries.get(user_id)
+        if entry is not None and entry.waiters <= 0:
+            _build_lock_entries.pop(user_id, None)
+
+
+def _activate_document_index(state):
+    global _active_state, _current_user_id, _documents_loaded
+    global docs, chunk_sources, index, embeddings, bm25_index, bm25_tokenized
+    with _index_cache_lock:
+        _active_state = state
+        _current_user_id = state.user_id
+        _documents_loaded = True
+        docs = state.docs
+        chunk_sources = state.chunk_sources
+        index = state.index
+        embeddings = state.embeddings
+        bm25_index = state.bm25_index
+        bm25_tokenized = state.bm25_tokenized
+
+
+def _cached_document_index(user_id, signature):
+    """Return the cached index when its signature still matches, else None."""
+    if signature is None:
+        return None
+    with _index_cache_lock:
+        state = _index_cache.get(user_id)
+        if state is None or state.signature != signature:
+            return None
+        _index_cache.move_to_end(user_id)
+        _activate_document_index(state)
+        return state
+
+
+def _legacy_document_index(user_id):
+    """Build a request state from module aliases for legacy callers and tests.
+
+    The aliases hold whichever account was activated last. When the cache
+    machinery knows the aliases belong to a different account, serving them
+    would hand one user's documents to another, so that case gets an empty
+    state. Aliases nobody has claimed are the legacy case and pass through.
+    """
+    if _active_state is not None and _active_state.user_id != user_id:
+        return UserDocumentIndex(
+            user_id=user_id,
+            signature=None,
+            docs=[],
+            chunk_sources=[],
+            index=None,
+            embeddings=None,
+            bm25_index=None,
+            bm25_tokenized=[],
+        )
+    return UserDocumentIndex(
+        user_id=user_id,
+        signature=None,
+        docs=docs,
+        chunk_sources=chunk_sources,
+        index=index,
+        embeddings=embeddings,
+        bm25_index=bm25_index,
+        bm25_tokenized=bm25_tokenized,
+    )
+
+
+def _remember_document_index(state):
+    with _index_cache_lock:
+        _index_cache[state.user_id] = state
+        _index_cache.move_to_end(state.user_id)
+        while len(_index_cache) > _INDEX_CACHE_SIZE:
+            evicted_user_id, _ = _index_cache.popitem(last=False)
+            evicted_entry = _build_lock_entries.get(evicted_user_id)
+            if evicted_entry is not None and evicted_entry.waiters <= 0:
+                _build_lock_entries.pop(evicted_user_id, None)
+        _activate_document_index(state)
+
+
+def _forget_document_index(user_id):
+    """Drop a user's cached index and aliases without rebuilding it."""
+    global _active_state, _current_user_id, _documents_loaded
+    global docs, chunk_sources, index, embeddings, bm25_index, bm25_tokenized
+    with _index_cache_lock:
+        _index_cache.pop(user_id, None)
+        if _current_user_id == user_id:
+            _active_state = None
+            _current_user_id = None
+            _documents_loaded = False
+            docs = []
+            chunk_sources = []
+            index = None
+            embeddings = None
+            bm25_index = None
+            bm25_tokenized = []
+    _forget_build_lock(user_id)
 
 
 def _is_private_or_local_host(hostname):
@@ -467,17 +667,14 @@ def _extract_markdown_from_html(html_text):
 
 
 
-def load_documents(user, progress_callback=None, is_cancelled=None):
-    global docs, chunk_sources, index, embeddings, bm25_index, bm25_tokenized, _documents_loaded
-    docs.clear()
-    chunk_sources.clear()
+def _chunk_document_files(user_dir, files, progress_callback=None, is_cancelled=None):
+    """Read and chunk one batch of files in listing order.
 
-    user_dir = _user_doc_dir(user)
-    os.makedirs(user_dir, exist_ok=True)
-    files = [
-        filename for filename in sorted(os.listdir(user_dir))
-        if filename.lower().endswith(SUPPORTED_EXTENSIONS)
-    ]
+    The full load and the incremental append share this, so both produce the
+    same chunks for the same file.
+    """
+    docs = []
+    sources = []
     total_files = max(1, len(files))
 
     for idx, filename in enumerate(files, start=1):
@@ -499,31 +696,243 @@ def load_documents(user, progress_callback=None, is_cancelled=None):
             chunks = [content.strip()]
         for chunk in chunks:
             docs.append(chunk)
-            chunk_sources.append(filename)
+            sources.append(filename)
         if progress_callback:
             progress = 55 + int((idx / total_files) * 35)
             progress_callback(min(progress, 90), f"Processed {idx}/{len(files)} files.")
 
     if is_cancelled and is_cancelled():
         raise TaskCancelled("Task was cancelled.")
+    return docs, sources
+
+
+def load_documents(user, progress_callback=None, is_cancelled=None):
+    """Build a UserDocumentIndex from the user's files. Does not touch the cache."""
+    user_dir = _user_doc_dir(user)
+    os.makedirs(user_dir, exist_ok=True)
+    files = _list_document_files(user_dir)
+    loaded_docs, loaded_sources = _chunk_document_files(
+        user_dir,
+        files,
+        progress_callback=progress_callback,
+        is_cancelled=is_cancelled,
+    )
+
     if progress_callback:
         progress_callback(95, "Building vector index...")
     try:
-        index, embeddings = build_index(docs)
+        vector_index, loaded_embeddings = build_index(loaded_docs)
     except Exception:
-        index, embeddings = None, None
+        vector_index, loaded_embeddings = None, None
     try:
-        bm25_index, bm25_tokenized = build_bm25_index(docs)
+        loaded_bm25_index, loaded_bm25_tokenized = build_bm25_index(loaded_docs)
     except Exception:
-        bm25_index, bm25_tokenized = None, []
-    _documents_loaded = True
+        loaded_bm25_index, loaded_bm25_tokenized = None, []
+
+    # The signature is attached by _load_stable_index only when the files held
+    # still for the whole read, so this state is not cacheable on its own.
+    return UserDocumentIndex(
+        user_id=user.id,
+        signature=None,
+        docs=loaded_docs,
+        chunk_sources=loaded_sources,
+        index=vector_index,
+        embeddings=loaded_embeddings,
+        bm25_index=loaded_bm25_index,
+        bm25_tokenized=loaded_bm25_tokenized,
+    )
+
+
+def _load_stable_index(user, progress_callback=None, is_cancelled=None):
+    """Load the index and report a signature only when the files held still.
+
+    A signature taken after the load cannot prove the loader saw the same files
+    it started with. Compare a pre-load and a post-load signature instead. When
+    they differ, or the scan itself was unstable, return the state with no
+    signature: the caller serves this request but leaves the cache untouched.
+    One retry is allowed, and only when both scans succeeded yet disagree, so a
+    directory that is merely busy does not double the load on every request.
+    """
+    state = None
+    for _ in range(_MAX_STABLE_LOAD_ATTEMPTS):
+        before = _document_signature(user)
+        state = load_documents(
+            user,
+            progress_callback=progress_callback,
+            is_cancelled=is_cancelled,
+        )
+        if not isinstance(state, UserDocumentIndex):
+            return state, None
+        after = _document_signature(user)
+        if before is not None and before == after:
+            return state, after
+        if before is None or after is None:
+            # The scan could not settle. Retrying here would only repeat the
+            # work, so serve the request and let the next one try again.
+            return state, None
+    return state, None
+
+
+def _build_incremental_index(user, progress_callback=None, is_cancelled=None):
+    """Append chunks for newly added files to the cached index.
+
+    Returns a fresh UserDocumentIndex, or None when the fast path cannot be
+    proven safe, so the caller runs the full rebuild instead. The cached state
+    must exist in this process with a signature that still matches every file it
+    wrapped, which rules out removals, renames and edits. Chunking and embedding
+    cover only the added files; the prior vectors are copied, never changed.
+
+    Memory note: the clone of the dense index and the combined embedding array
+    are transient copies of the prior vectors, roughly twice the prior dense
+    state at peak, plus the new rows. Both are freed once the new state is
+    installed and the prior state is evicted.
+    """
+    user_id = user.id
+    current_signature = _document_signature(user)
+    if not current_signature:
+        return None
+
+    with _index_cache_lock:
+        prior = _index_cache.get(user_id)
+    if prior is None or prior.signature is None:
+        return None
+    if prior.index is None or prior.embeddings is None:
+        return None
+    if len(prior.docs) != len(prior.chunk_sources):
+        return None
+    if len(prior.embeddings) != len(prior.docs):
+        return None
+
+    prior_entries = {name: (size, mtime) for name, size, mtime in prior.signature}
+    current_entries = {name: (size, mtime) for name, size, mtime in current_signature}
+    for name, stamp in prior_entries.items():
+        if current_entries.get(name) != stamp:
+            # A file was removed, renamed or edited, so the prior vectors no
+            # longer describe the directory. Rebuild everything.
+            return None
+    new_names = sorted(name for name in current_entries if name not in prior_entries)
+    if not new_names:
+        # Nothing was added, only the cache was bypassed. Existing behavior.
+        return None
+
+    new_docs, new_sources = _chunk_document_files(
+        _user_doc_dir(user),
+        new_names,
+        progress_callback=progress_callback,
+        is_cancelled=is_cancelled,
+    )
+    if not new_docs or len(new_docs) != len(new_sources):
+        # A new file yielded no text. It still belongs in the signature, so let
+        # the full rebuild record it rather than guessing here.
+        return None
+
+    try:
+        new_embeddings = embed_texts(new_docs)
+        extended_index, combined_embeddings = extend_index(
+            prior.index, prior.embeddings, new_embeddings
+        )
+    except TaskCancelled:
+        raise
+    except Exception:
+        # Embedding or cloning failed. The full rebuild has its own error
+        # handling, so hand the request back to it instead of failing it here.
+        return None
+    if extended_index is None or combined_embeddings is None:
+        return None
+
+    combined_docs = list(prior.docs) + new_docs
+    combined_sources = list(prior.chunk_sources) + new_sources
+    try:
+        combined_bm25_index, combined_bm25_tokenized = build_bm25_index(combined_docs)
+    except Exception:
+        return None
+
+    if _document_signature(user) != current_signature:
+        # Files moved while the new chunks were built. The full rebuild owns the
+        # retry, so hand the decision to it.
+        return None
+
+    if is_cancelled and is_cancelled():
+        raise TaskCancelled("Task was cancelled.")
+
+    # Report this only now. A fallback runs the full loader from 55 upward, so
+    # an earlier 95 would make the task's progress run backwards.
+    if progress_callback:
+        progress_callback(95, "Building vector index...")
+
+    return UserDocumentIndex(
+        user_id=user_id,
+        signature=current_signature,
+        docs=combined_docs,
+        chunk_sources=combined_sources,
+        index=extended_index,
+        embeddings=combined_embeddings,
+        bm25_index=combined_bm25_index,
+        bm25_tokenized=combined_bm25_tokenized,
+    )
+
+
+def _build_document_index(user, force=False, progress_callback=None, is_cancelled=None):
+    """Return a ready index for the user, from cache when its signature matches."""
+    user_id = user.id
+    if not force:
+        state = _cached_document_index(user_id, _document_signature(user))
+        if state is not None:
+            return state
+
+    # Serialize builds per user. Cached users never wait here.
+    entry = _acquire_build_slot(user_id)
+    try:
+        with entry.lock:
+            if not force:
+                # Another thread may have finished the same build while we waited.
+                state = _cached_document_index(user_id, _document_signature(user))
+                if state is not None:
+                    return state
+
+            # Pure additions reuse the cached vectors; anything else falls through.
+            state = _build_incremental_index(
+                user,
+                progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+            if isinstance(state, UserDocumentIndex):
+                _remember_document_index(state)
+                return state
+
+            state, signature = _load_stable_index(
+                user,
+                progress_callback=progress_callback,
+                is_cancelled=is_cancelled,
+            )
+            if not isinstance(state, UserDocumentIndex):
+                return state
+            if signature is None:
+                # The files changed while loading. Serve this request from the
+                # fresh state, but skip the cache so the next request rebuilds
+                # instead of trusting a signature the loader never saw.
+                return state
+
+            state.signature = signature
+            _remember_document_index(state)
+            return state
+    finally:
+        _release_build_slot(user_id, entry)
 
 
 def ensure_documents_loaded(user, force=False):
-    global _current_user_id, bm25_index, bm25_tokenized
-    if force or not _documents_loaded or _current_user_id != user.id:
-        load_documents(user)
-        _current_user_id = user.id
+    state = _build_document_index(user, force=force)
+    if isinstance(state, UserDocumentIndex):
+        return state
+    return _legacy_document_index(user.id)
+
+
+def get_document_index(user, force=False):
+    """Return this user's index, preserving the legacy alias fallback."""
+    state = ensure_documents_loaded(user, force=force)
+    if isinstance(state, UserDocumentIndex):
+        return state
+    return _legacy_document_index(user.id)
 
 
 def _is_youtube_url(url):
@@ -691,16 +1100,25 @@ def _run_reindex_task(user_id, update=None, is_cancelled=None):
         update(50, "Indexing documents...")
 
     user = User.objects.get(id=user_id)
-    load_documents(user, progress_callback=update, is_cancelled=is_cancelled)
+    # force=True rebuilds and installs under the per-user build lock, so a worker
+    # reindex serializes with request-time builds for the same user.
+    document_index = _build_document_index(
+        user,
+        force=True,
+        progress_callback=update,
+        is_cancelled=is_cancelled,
+    )
+    if not isinstance(document_index, UserDocumentIndex):
+        document_index = _legacy_document_index(user.id)
 
-    for name in dict.fromkeys(chunk_sources):
+    for name in dict.fromkeys(document_index.chunk_sources):
         Document.objects.get_or_create(user=user, filename=Path(name).name)
 
     return {
         "message": "Documents ingested successfully.",
-        "total_chunks": len(docs),
-        "total_documents": len(set(chunk_sources)),
-        "documents": list(dict.fromkeys(chunk_sources)),
+        "total_chunks": len(document_index.docs),
+        "total_documents": len(set(document_index.chunk_sources)),
+        "documents": list(dict.fromkeys(document_index.chunk_sources)),
     }
 
 
@@ -795,20 +1213,28 @@ class AskView(APIView):
     permission_classes = [IsAuthenticated]
     throttle_classes = [ChatRateThrottle]
     def post(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         question = request.data.get("question")
         if not question or not question.strip():
             return Response(
                 {"error": "Please provide a non-empty 'question' in the request body."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if index is None or index.ntotal == 0:
+        if document_index.index is None or document_index.index.ntotal == 0:
             return Response(
                 {"error": "No indexed documents found. Upload documents and run ingestion first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=10)
-        sources = [chunk_sources[i] for i in top_indices]
+        top_chunks, top_indices = hybrid_search(
+            question,
+            document_index.docs,
+            document_index.index,
+            document_index.bm25_index,
+            document_index.bm25_tokenized,
+            document_index.embeddings,
+            top_k=10,
+        )
+        sources = [document_index.chunk_sources[i] for i in top_indices]
 
         # Rerank to top-3 for higher precision.
         reranked = rerank(question, top_chunks, top_k=3)
@@ -1093,15 +1519,8 @@ class DeleteAccountView(APIView):
         user_dir = _user_doc_dir(user)
         if os.path.isdir(user_dir):
             shutil.rmtree(user_dir, ignore_errors=True)
-        # Reset in-memory index if currently loaded for this user.
-        global _current_user_id, _documents_loaded, bm25_index, bm25_tokenized
-        if _current_user_id == user.id:
-            docs.clear()
-            chunk_sources.clear()
-            bm25_index = None
-            bm25_tokenized = []
-            _current_user_id = None
-            _documents_loaded = False
+        # Drop the user's cached index and build lock as part of account deletion.
+        _forget_document_index(user.id)
         user.delete()
         response = Response(
             {'message': 'Account deleted successfully.'},
@@ -1187,7 +1606,7 @@ class SearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         query = request.data.get('query')
         if not query:
             return Response(
@@ -1202,8 +1621,16 @@ class SearchView(APIView):
                 {'error': 'top_k must be an integer.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = hybrid_search(query, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=top_k)
-        sources = [chunk_sources[i] for i in top_indices]
+        top_chunks, top_indices = hybrid_search(
+            query,
+            document_index.docs,
+            document_index.index,
+            document_index.bm25_index,
+            document_index.bm25_tokenized,
+            document_index.embeddings,
+            top_k=top_k,
+        )
+        sources = [document_index.chunk_sources[i] for i in top_indices]
         results = []
         for i, chunk in enumerate(top_chunks):
             results.append({
@@ -1254,7 +1681,7 @@ class ChatView(APIView):
     throttle_classes = [ChatRateThrottle]
 
     def post(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         question = request.data.get('question')
         conversation_id = request.data.get('conversation_id')
 
@@ -1263,7 +1690,7 @@ class ChatView(APIView):
                 {'error': 'Please provide a non-empty question.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if index is None or index.ntotal == 0:
+        if document_index.index is None or document_index.index.ntotal == 0:
             return Response(
                 {'error': 'No indexed documents found. Upload documents and run ingestion first.'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -1291,8 +1718,16 @@ class ChatView(APIView):
             for m in past_messages
         ]
 
-        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=10)
-        sources = [chunk_sources[i] for i in top_indices]
+        top_chunks, top_indices = hybrid_search(
+            question,
+            document_index.docs,
+            document_index.index,
+            document_index.bm25_index,
+            document_index.bm25_tokenized,
+            document_index.embeddings,
+            top_k=10,
+        )
+        sources = [document_index.chunk_sources[i] for i in top_indices]
 
         # Rerank to top-3 for higher precision.
         reranked = rerank(question, top_chunks, top_k=3)
@@ -1366,7 +1801,7 @@ class ChatStreamView(APIView):
     throttle_classes = [ChatRateThrottle]
 
     def post(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         question = request.data.get('question')
         conversation_id = request.data.get('conversation_id')
 
@@ -1375,7 +1810,7 @@ class ChatStreamView(APIView):
                 {'error': 'Please provide a non-empty question.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        if index is None or index.ntotal == 0:
+        if document_index.index is None or document_index.index.ntotal == 0:
             return Response(
                 {'error': 'No indexed documents found. Upload documents and run ingestion first.'},
                 status=status.HTTP_400_BAD_REQUEST
@@ -1403,8 +1838,16 @@ class ChatStreamView(APIView):
             for m in past_messages
         ]
 
-        top_chunks, top_indices = hybrid_search(question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=10)
-        sources = [chunk_sources[i] for i in top_indices]
+        top_chunks, top_indices = hybrid_search(
+            question,
+            document_index.docs,
+            document_index.index,
+            document_index.bm25_index,
+            document_index.bm25_tokenized,
+            document_index.embeddings,
+            top_k=10,
+        )
+        sources = [document_index.chunk_sources[i] for i in top_indices]
 
         reranked = rerank(question, top_chunks, top_k=3)
         reranked_chunks = [r["chunk"] for r in reranked]
@@ -1577,16 +2020,17 @@ class StatusView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_documents_loaded(request.user)
-        vector_db_ok = index is not None and index.ntotal > 0
+        document_index = get_document_index(request.user)
+        vector_index = document_index.index
+        vector_db_ok = vector_index is not None and vector_index.ntotal > 0
         return Response({
             'status': 'ok' if vector_db_ok else 'degraded',
             'server': 'running',
             'vector_database': {
-                'connected': index is not None,
-                'total_chunks': index.ntotal if index is not None else 0,
-                'total_documents': len(set(chunk_sources)),
-                'embedding_dimension': index.d if index is not None else 0,
+                'connected': vector_index is not None,
+                'total_chunks': vector_index.ntotal if vector_index is not None else 0,
+                'total_documents': len(set(document_index.chunk_sources)),
+                'embedding_dimension': vector_index.d if vector_index is not None else 0,
             },
             'supported_formats': list(SUPPORTED_EXTENSIONS),
         }, status=status.HTTP_200_OK)
@@ -1896,7 +2340,7 @@ class SearchRerankView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         query = request.data.get('query')
         if not query or not query.strip():
             return Response(
@@ -1913,14 +2357,22 @@ class SearchRerankView(APIView):
                 {'error': 'initial_k and final_k must be integers.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        top_chunks, top_indices = hybrid_search(query, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=initial_k)
+        top_chunks, top_indices = hybrid_search(
+            query,
+            document_index.docs,
+            document_index.index,
+            document_index.bm25_index,
+            document_index.bm25_tokenized,
+            document_index.embeddings,
+            top_k=initial_k,
+        )
         reranked = rerank(query, top_chunks, top_k=final_k)
         results = []
         for item in reranked:
             source_idx = item['index']
             results.append({
                 'chunk': item['chunk'],
-                'source': chunk_sources[top_indices[source_idx]],
+                'source': document_index.chunk_sources[top_indices[source_idx]],
                 'relevance_score': round(item['score'], 4)
             })
         return Response({
@@ -1934,7 +2386,7 @@ class SearchSuggestView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         query = request.query_params.get('q', '').lower().strip()
         if not query:
             return Response(
@@ -1942,11 +2394,11 @@ class SearchSuggestView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         suggestions = set()
-        for source in chunk_sources:
+        for source in document_index.chunk_sources:
             name = os.path.splitext(source)[0].replace('-', ' ').replace('_', ' ')
             if query in name.lower():
                 suggestions.add(name)
-        for chunk in docs:
+        for chunk in document_index.docs:
             words = chunk.split()[:10]
             line = ' '.join(words)
             if query in line.lower():
@@ -1996,20 +2448,20 @@ class AdminVectorsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        ensure_documents_loaded(request.user)
+        document_index = get_document_index(request.user)
         if not request.user.is_staff:
             return Response(
                 {'error': 'Admin access required.'},
                 status=status.HTTP_403_FORBIDDEN
             )
         doc_stats = {}
-        for i, source in enumerate(chunk_sources):
+        for i, source in enumerate(document_index.chunk_sources):
             if source not in doc_stats:
-                doc_stats[source] = {'chunks': 0, 'sample': docs[i][:100]}
+                doc_stats[source] = {'chunks': 0, 'sample': document_index.docs[i][:100]}
             doc_stats[source]['chunks'] += 1
         return Response({
-            'total_vectors': index.ntotal if index else 0,
-            'embedding_dim': index.d if index else 0,
+            'total_vectors': document_index.index.ntotal if document_index.index else 0,
+            'embedding_dim': document_index.index.d if document_index.index else 0,
             'total_documents': len(doc_stats),
             'documents': doc_stats,
         }, status=status.HTTP_200_OK
@@ -2229,18 +2681,22 @@ class GenerateEvaluationDataView(APIView):
         try:
             from api.models import EvaluationDataset, UserProfile
             from api.generator import generate_answer
-            ensure_documents_loaded(request.user)
-            if not docs:
+            document_index = get_document_index(request.user)
+            if not document_index.docs:
                 raise EvaluationError("No documents found. Please upload documents first.")
 
-            sampled_chunks = random.sample(docs, min(num_questions * 2, len(docs)))
+            sampled_chunks = random.sample(
+                document_index.docs,
+                min(num_questions * 2, len(document_index.docs)),
+            )
             profile = UserProfile.objects.get(user=request.user)
+            provider_key = decrypt_value(profile.llm_api_key)
             new_items = []
 
             for chunk in sampled_chunks[:num_questions]:
                 prompt = f"Given the following text, generate exactly one specific question that can be answered using ONLY this text. Also provide the expected answer. Return the result in rigid JSON format with keys 'question' and 'expected_answer'.\n\nText: {chunk}"
                 try:
-                    response = generate_answer(prompt, [], provider=profile.llm_provider, model=profile.llm_model, api_key=profile.llm_api_key)
+                    response = generate_answer(prompt, [], provider=profile.llm_provider, model=profile.llm_model, api_key=provider_key)
                     json_match = re.search(r'\{.*\}', response, re.DOTALL)
                     if json_match:
                         qa_data = json.loads(json_match.group(0))
@@ -2259,6 +2715,7 @@ class RunEvaluationView(APIView):
     permission_classes = [IsAuthenticated]
     def post(self, request):
         dataset_id = request.data.get('dataset_id')
+        previous_openai_key = os.environ.get("OPENAI_API_KEY")
         try:
             from api.models import EvaluationDataset, EvaluationResult, UserProfile
             from api.generator import generate_answer
@@ -2269,21 +2726,34 @@ class RunEvaluationView(APIView):
             if not items.exists():
                 raise EvaluationError("No evaluation dataset found for this user. Generate one first.")
                 
-            ensure_documents_loaded(request.user)
-            profile = UserProfile.objects.get(user=request.user)
+            document_index = get_document_index(request.user)
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            provider_key = decrypt_value(profile.llm_api_key)
+
+            # DeepEval reads OPENAI_API_KEY from the process environment, and it
+            # reads it while the metrics are constructed. Publish the decrypted
+            # key first, then restore whatever was there in the finally below so
+            # one request cannot leave another account's key behind.
+            if provider_key:
+                os.environ["OPENAI_API_KEY"] = provider_key
 
             try:
                 metrics = [FaithfulnessMetric(threshold=0.5, include_reason=False), AnswerRelevancyMetric(threshold=0.5, include_reason=False), ContextualRelevancyMetric(threshold=0.5, include_reason=False)]
             except Exception as e: raise EvaluationError(f"Failed to initialize metrics. DeepEval requires OPENAI_API_KEY environment variable. Error: {e}")
 
-            if profile.llm_provider == "openai" and profile.llm_api_key:
-                os.environ["OPENAI_API_KEY"] = profile.llm_api_key
-
             results = []
             for item in items:
                 try:
-                    top_chunks, top_indices = hybrid_search(item.question, docs, index, bm25_index, bm25_tokenized, embeddings, top_k=3)
-                    actual_answer = generate_answer(item.question, top_chunks, provider=profile.llm_provider, model=profile.llm_model, api_key=profile.llm_api_key)
+                    top_chunks, top_indices = hybrid_search(
+                        item.question,
+                        document_index.docs,
+                        document_index.index,
+                        document_index.bm25_index,
+                        document_index.bm25_tokenized,
+                        document_index.embeddings,
+                        top_k=3,
+                    )
+                    actual_answer = generate_answer(item.question, top_chunks, provider=profile.llm_provider, model=profile.llm_model, api_key=provider_key)
                     test_case = LLMTestCase(input=item.question, actual_output=actual_answer, retrieval_context=top_chunks, expected_output=item.expected_answer)
                     
                     f_score, a_score, c_score = 0.0, 0.0, 0.0
@@ -2306,6 +2776,11 @@ class RunEvaluationView(APIView):
             return Response({"message": "Evaluation complete", "results": results}, status=status.HTTP_200_OK)
         except EvaluationError as e: return Response({"error": str(e)}, status=e.status_code)
         except Exception as e: return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        finally:
+            if previous_openai_key is None:
+                os.environ.pop("OPENAI_API_KEY", None)
+            else:
+                os.environ["OPENAI_API_KEY"] = previous_openai_key
 
 class EvaluationResultsView(APIView):
     permission_classes = [IsAuthenticated]

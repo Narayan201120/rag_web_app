@@ -1,23 +1,58 @@
+import logging
+import threading
+
 from sentence_transformers import SentenceTransformer, CrossEncoder
 import faiss
 import numpy as np
 from rank_bm25 import BM25Okapi
 
+logger = logging.getLogger(__name__)
+
+EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
 _model = None
 _reranker = None
+
+# One lock per model, so a warmup and a concurrent request cannot both see None
+# and each build their own copy. Without this the model is constructed twice,
+# which doubles the memory and pays the load twice.
+_model_lock = threading.Lock()
+_reranker_lock = threading.Lock()
+
+
+def _load(model_class, name):
+    """Load a model from the local cache, falling back to a download.
+
+    Passing local_files_only=True skips the HuggingFace hub round trips. With
+    both models already cached, those round trips measured 4.1-4.8s for the
+    sentence encoder and 5.2-10.7s for the reranker, against 0.59s and 0.17s
+    when the cache is read directly, and one process even stalled 46s inside
+    the import. The fallback keeps a first run on an uncached machine, such as
+    a fresh container, working.
+    """
+    try:
+        return model_class(name, local_files_only=True)
+    except Exception as exc:
+        logger.info("%s is not cached locally (%s); downloading it", name, exc)
+        return model_class(name)
 
 
 def get_embedding_model():
     global _model
     if _model is None:
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        with _model_lock:
+            if _model is None:
+                _model = _load(SentenceTransformer, EMBEDDING_MODEL_NAME)
     return _model
 
 
 def get_reranker():
     global _reranker
     if _reranker is None:
-        _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        with _reranker_lock:
+            if _reranker is None:
+                _reranker = _load(CrossEncoder, RERANKER_MODEL_NAME)
     return _reranker
 
 def embed_texts(texts):

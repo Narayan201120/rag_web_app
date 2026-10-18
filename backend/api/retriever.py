@@ -1,12 +1,17 @@
 import logging
 import threading
 
-from sentence_transformers import SentenceTransformer, CrossEncoder
-import faiss
 import numpy as np
-from rank_bm25 import BM25Okapi
 
 logger = logging.getLogger(__name__)
+
+# The third-party retrieval libraries are imported inside the functions that
+# need them, not at module scope. `sentence_transformers` costs 10.1-10.7s to
+# import in this environment because it pulls in torch and transformers; faiss
+# and rank_bm25 cost about 0.3s each. At module scope that whole cost landed on
+# the first request to any /api/ URL, including /api/health/, because
+# api/urls.py imports api.views, which imports this module. Deferring it keeps
+# the cost on the retrieval paths that actually need it.
 
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -43,6 +48,8 @@ def get_embedding_model():
     if _model is None:
         with _model_lock:
             if _model is None:
+                from sentence_transformers import SentenceTransformer
+
                 _model = _load(SentenceTransformer, EMBEDDING_MODEL_NAME)
     return _model
 
@@ -52,6 +59,8 @@ def get_reranker():
     if _reranker is None:
         with _reranker_lock:
             if _reranker is None:
+                from sentence_transformers import CrossEncoder
+
                 _reranker = _load(CrossEncoder, RERANKER_MODEL_NAME)
     return _reranker
 
@@ -70,6 +79,8 @@ def embed_texts(texts):
 def build_index(docs):
     if not docs:
         return None, None
+    import faiss
+
     embeddings = embed_texts(docs)
     dimension = embeddings.shape[1]
     index = faiss.IndexFlatL2(dimension)
@@ -83,6 +94,8 @@ def clone_index(index):
     faiss.clone_index copies the underlying vectors, so appending to the clone
     cannot change the caller's index.
     """
+    import faiss
+
     return faiss.clone_index(index)
 
 
@@ -202,6 +215,8 @@ def remove_overlapping_chunks(chunks, sources, overlap_threshold=0.6):
 
 
 def build_bm25_index(docs):
+    from rank_bm25 import BM25Okapi
+
     tokenized_corpus = [doc.lower().split() for doc in docs]
     return BM25Okapi(tokenized_corpus), tokenized_corpus
 

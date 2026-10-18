@@ -1,14 +1,28 @@
 import os
 import requests
 from dotenv import load_dotenv
-from openai import OpenAI
 
 load_dotenv()
 
-try:
-    from google import genai as google_genai
-except ImportError:
-    google_genai = None
+# Provider SDKs are imported on first use, not at module scope. Importing
+# openai costs about 2.0s here and google.genai about 2.2s, and api/views.py
+# imports this module, so at module scope both were paid by the first request
+# to any /api/ URL even when that request never touched a language model.
+_google_genai = None
+_google_genai_loaded = False
+
+
+def _google_genai_module():
+    """Return the Google GenAI SDK, or None when it is not installed."""
+    global _google_genai, _google_genai_loaded
+    if not _google_genai_loaded:
+        try:
+            from google import genai
+        except ImportError:
+            genai = None
+        _google_genai = genai
+        _google_genai_loaded = True
+    return _google_genai
 
 
 class ProviderAPIError(Exception):
@@ -36,6 +50,8 @@ Answer:"""
 
 
 def _generate_with_openai_compatible(prompt, api_key, model, base_url, max_tokens=1200):
+    from openai import OpenAI
+
     client = OpenAI(api_key=api_key, base_url=base_url)
     response = client.chat.completions.create(
         model=model,
@@ -50,6 +66,8 @@ def _generate_with_openai_compatible(prompt, api_key, model, base_url, max_token
 
 
 def _stream_openai_compatible(prompt, api_key, model, base_url, max_tokens=1200):
+    from openai import OpenAI
+
     client = OpenAI(api_key=api_key, base_url=base_url)
     response = client.chat.completions.create(
         model=model,
@@ -65,9 +83,10 @@ def _stream_openai_compatible(prompt, api_key, model, base_url, max_tokens=1200)
 
 
 def _generate_with_gemini(prompt, api_key, model):
-    if google_genai is not None:
+    genai = _google_genai_module()
+    if genai is not None:
         try:
-            client = google_genai.Client(api_key=api_key)
+            client = genai.Client(api_key=api_key)
             response = client.models.generate_content(
                 model=model,
                 contents=prompt,
@@ -94,9 +113,10 @@ def _generate_with_gemini(prompt, api_key, model):
 
 
 def _stream_gemini(prompt, api_key, model):
-    if google_genai is not None:
+    genai = _google_genai_module()
+    if genai is not None:
         try:
-            client = google_genai.Client(api_key=api_key)
+            client = genai.Client(api_key=api_key)
             response = client.models.generate_content_stream(
                 model=model,
                 contents=prompt,

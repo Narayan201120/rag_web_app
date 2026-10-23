@@ -1,70 +1,78 @@
-# Getting Started with Create React App
+# DocuMind frontend
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+React + TypeScript single-page app for the DocuMind RAG backend: upload documents,
+ask questions with streamed answers, and verify every claim through its citations.
 
-## Available Scripts
+## Stack
 
-In the project directory, you can run:
+- **Vite 7 + React 19 + TypeScript** — build tooling and views
+- **react-router-dom** — routing and auth guards
+- **react-markdown + remark-gfm** — answer rendering, with a small custom remark
+  plugin (`src/components/remarkCitations.ts`) that turns `[1]`-style markers
+  into interactive citation chips
+- **Hand-written CSS** (`src/styles/`) — design tokens in `tokens.css`, no UI framework
+- Native `fetch` — no HTTP client library; the access token lives in memory and the
+  refresh token stays in an HttpOnly cookie (`src/lib/api.ts` retries once through
+  `POST /api/token/refresh/` on any 401)
 
-### `npm start`
+## Commands
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+```bash
+npm install        # install dependencies
+npm run dev        # dev server on :3000, proxying nothing — calls the API directly
+npm run test       # vitest, single pass
+npm run typecheck  # tsc --noEmit
+npm run build      # typecheck + production build into dist/
+npm run preview    # serve the production build locally
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Configuration
 
-### `npm test`
+Copy `.env.example` to `.env`:
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+| Variable | Purpose |
+|---|---|
+| `VITE_API_URL` | Base URL of the Django API (default `http://127.0.0.1:8000/api`) |
+| `VITE_GOOGLE_CLIENT_ID` | Enables the Google sign-in button (Google Identity Services) |
+| `VITE_MICROSOFT_CLIENT_ID` | Enables Microsoft sign-in (OAuth redirect flow) |
+| `VITE_GITHUB_CLIENT_ID` | Enables GitHub sign-in (OAuth redirect flow) |
+| `VITE_MOCK` | `1` runs the UI against built-in fixtures, no backend needed |
 
-### `npm run build`
+The backend must list the frontend origin in `DJANGO_CORS_ALLOWED_ORIGINS`
+(credentials are sent with every request). Microsoft/GitHub OAuth redirect URIs are
+`<origin>/auth/callback/microsoft` and `<origin>/auth/callback/github`.
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Demo mode
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+`VITE_MOCK=1 npm run dev` starts the app with an in-browser mock of the API
+(`src/mocks/`) — streaming answers, task progress, admin data. Useful for design
+work and demos; the session survives reloads within a tab.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Structure
 
-### `npm run eject`
+```
+src/
+  lib/          API client, SSE stream parser, citation parsing, formatting
+  state/        Auth provider (silent refresh at boot) and toasts
+  components/   Icon set, logo, modal, drawer, markdown renderer
+  views/        One module per screen (auth, chat, documents, search,
+                evaluation, settings, admin) plus chat/ subcomponents
+  mocks/        Fetch-level mock of the backend
+  styles/       tokens.css (design tokens) + per-area stylesheets
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## Design notes
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+The interface is built around the product's core promise — verifiable answers:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+- **Dark is the default theme** (`data-theme='dark'` set pre-paint in `index.html`);
+  the light theme remains available via the Appearance toggle in Settings and the
+  choice persists in `localStorage`. Both palettes are pure token overrides in
+  `src/styles/tokens.css`.
+- A deep pine-ink rail on cool paper; the chartreuse **highlighter** color is
+  reserved for exactly two jobs: marking the active nav item and highlighting
+  retrieved text (`<mark>` in search results, citation chips).
+- Newsreader (serif) for statements, Instrument Sans for UI, Spline Sans Mono for
+  file names, metadata, and citation markers.
+- Answers render `[n]` markers as buttons that open the citations drawer with the
+  exact passages.

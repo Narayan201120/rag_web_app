@@ -35,7 +35,7 @@ from api.llm_catalog import PROVIDER_MODELS
 from api.encryption import encrypt_value, decrypt_value
 import shutil
 
-DOC_DIR = os.path.join(settings.BASE_DIR, "documents")
+DOC_DIR = os.getenv("RAG_DOCUMENTS_DIR", "").strip() or os.path.join(settings.BASE_DIR, "documents")
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
 SUPPORTED_LLM_PROVIDERS = [choice[0] for choice in UserProfile.PROVIDER_CHOICES]
 

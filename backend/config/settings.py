@@ -44,7 +44,10 @@ SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", DEV_SECRET_KEY)
 DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
 
 render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
-default_hosts = "localhost,127.0.0.1" if DEBUG else render_external_hostname
+space_host = os.getenv("SPACE_HOST", "").strip()
+default_hosts = "localhost,127.0.0.1" if DEBUG else ",".join(
+    host for host in (render_external_hostname, space_host) if host
+)
 ALLOWED_HOSTS = _csv_env("DJANGO_ALLOWED_HOSTS", default_hosts)
 
 
@@ -99,6 +102,10 @@ render_external_url = os.getenv("RENDER_EXTERNAL_URL", "").strip()
 default_cors_origins = "http://localhost:3000" if DEBUG else render_external_url
 CORS_ALLOWED_ORIGINS = _csv_env("DJANGO_CORS_ALLOWED_ORIGINS", default_cors_origins)
 CORS_ALLOW_CREDENTIALS = True
+
+# Django's CSRF check applies to session-authenticated views such as the admin.
+# Keep it in step with CORS so a deployed frontend origin is trusted.
+CSRF_TRUSTED_ORIGINS = _csv_env("DJANGO_CSRF_TRUSTED_ORIGINS", default_cors_origins)
 
 FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "").strip()
 

@@ -1,6 +1,6 @@
 # Deployment
 
-DocuMind has two halves. The frontend is a static Create React App build. The backend is Django with two local transformer models.
+DocuMind has two halves. The frontend is a static Vite build. The backend is Django with two local transformer models.
 
 **Live frontend:** https://documind-sooty-two.vercel.app
 
@@ -40,34 +40,70 @@ Running here needs a rewrite around external storage, a queue, and a vector stor
 
 ## Frontend on Vercel
 
-Live at https://documind-sooty-two.vercel.app. The project is `narayan201120s-projects/documind`, with root directory `frontend`.
+Live at https://documind-sooty-two.vercel.app. The project is `narayan201120s-projects/documind`, linked from `frontend/.vercel`.
 
-Deploy a change:
+The project is **not connected to GitHub**. A push does not deploy. Run the CLI from `frontend/`:
 
 ```bash
 cd frontend
 vercel --prod
 ```
 
-- `frontend/vercel.json` rewrites deep links to `index.html`.
-- `frontend/package.json` pins Node 22 through `engines`.
-- `REACT_APP_API_URL` is not set yet. The build falls back to `http://127.0.0.1:8000/api`, so the deployed site shows a failed health check until a backend exists. Set the variable and redeploy; CRA inlines it at build time.
-- `REACT_APP_GOOGLE_CLIENT_ID` is not set on Vercel yet. The Google button logs `client_id is not set correctly`. Set it, and add the Vercel origin to the Google OAuth client, before testing Google sign-in.
+`frontend/vercel.json` sets the framework, the build command, and the output directory, then rewrites deep links to `index.html`:
 
-Verified after the first deploy:
+```json
+{
+  "framework": "vite",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
+`npm run build` runs `tsc --noEmit` before Vite, so a type error fails the deploy. TypeScript is pinned to `7.1.0-beta`, and `package-lock.json` already lists the Linux x64 binary that Vercel installs. Vite writes `dist/`. Vercel builds with Node 24.
+
+Vite inlines `VITE_*` variables at build time. Change one and redeploy; nothing updates at runtime.
+
+| Variable | Status | Notes |
+| --- | --- | --- |
+| `VITE_API_URL` | not set | Falls back to `http://127.0.0.1:8000/api`. Set it once a backend exists. |
+| `VITE_GOOGLE_CLIENT_ID` | not set | The Google button stays hidden while this is empty. |
+| `VITE_MICROSOFT_CLIENT_ID` | not set | Same. |
+| `VITE_GITHUB_CLIENT_ID` | not set | Same. |
+| `VITE_MOCK` | not set | `1` builds the UI against fixtures with no backend. Do not set this in production. |
+
+Set them with the CLI, piping the value through stdin:
+
+```powershell
+cd frontend
+'https://api.example.com/api' | vercel env add VITE_API_URL production --no-sensitive --yes
+```
+
+```bash
+cd frontend
+printf '%s' 'https://api.example.com/api' | vercel env add VITE_API_URL production --no-sensitive --yes
+```
+
+Verified after the Vite deploy on 2026-10-24:
 
 | Check | Result |
 | --- | --- |
-| `/` | 200, redirects to `/login`, renders the sign-in form |
-| `/documents` | 200, serves `index.html` |
+| `/` | 200, serves the Vite `index.html` |
+| `/login` | 200, renders the sign-in form |
+| `/documents`, `/chat` | 200, serve `index.html` |
 | `/does-not-exist` | 200, serves `index.html` |
-| `/static/js/main.*.js` | 200, `application/javascript` |
+| `/assets/index-C90jblD0.js` | 200, 498 KB, same hash as the local build |
+
+The only console error is `ERR_CONNECTION_REFUSED` from `http://127.0.0.1:8000/api/token/refresh/`. `VITE_API_URL` is unset, so the browser tries localhost.
+
+The old Create React App frontend lives on the `frontend-legacy` branch. It is not deployed.
 
 ### How the browser reaches the API
 
 **Proxy (recommended).** The browser calls the Vercel origin. Cookies stay first-party, and CORS is unnecessary.
 
-- Set `REACT_APP_API_URL=/api`.
+- Set `VITE_API_URL=/api`.
 - Put the API rewrite before the SPA rule in `frontend/vercel.json`:
 
 ```json
@@ -87,7 +123,7 @@ Verified after the first deploy:
 
 **Direct.** The browser calls the backend origin.
 
-- Set `REACT_APP_API_URL=https://BACKEND_HOST/api`.
+- Set `VITE_API_URL=https://BACKEND_HOST/api`.
 - Set `DJANGO_CORS_ALLOWED_ORIGINS` and `DJANGO_CSRF_TRUSTED_ORIGINS` to `https://YOUR_APP.vercel.app`.
 - Cookies are third-party. Safari blocks them, so `/api/token/refresh/` fails once the 30-minute access token expires. The proxy avoids this.
 

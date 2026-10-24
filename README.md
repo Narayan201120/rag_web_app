@@ -29,7 +29,7 @@ A full-stack Retrieval-Augmented Generation (RAG) application that lets you uplo
 | LLM routing | OpenAI-compatible SDK + Google GenAI SDK |
 | Web scraping | BeautifulSoup4 (Trafilatura pinned in requirements, migration pending) |
 | Database | PostgreSQL (SQLite fallback for dev) |
-| Frontend | React (Create React App) |
+| Frontend | React 19 + Vite + TypeScript 7 |
 | Math rendering | KaTeX |
 
 ---
@@ -39,7 +39,7 @@ A full-stack Retrieval-Augmented Generation (RAG) application that lets you uplo
 ### Prerequisites
 
 - Python 3.12+
-- Node 18+
+- Node 20.19+
 - PostgreSQL (or use SQLite for local dev)
 
 ### Backend
@@ -71,10 +71,12 @@ python manage.py runserver
 cd frontend
 cp .env.example .env         # edit if your backend URL differs
 npm install
-npm start
+npm run dev
 ```
 
 The app is available at `http://localhost:3000`.
+
+`npm run dev` with `VITE_MOCK=1` serves the UI from built-in fixtures, so no backend is needed. `npm run build` type-checks with `tsc --noEmit` and writes `dist/`. `npm test` runs Vitest.
 
 ---
 
@@ -109,9 +111,12 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 For the frontend, create `frontend/.env` from `frontend/.env.example`:
 
 ```env
-REACT_APP_API_URL=http://127.0.0.1:8000/api
-REACT_APP_GOOGLE_CLIENT_ID=
+VITE_API_URL=http://127.0.0.1:8000/api
+VITE_GOOGLE_CLIENT_ID=
+VITE_MOCK=0
 ```
+
+Vite inlines `VITE_*` variables at build time. Social sign-in buttons stay hidden until their client ID is set.
 
 When `DJANGO_DEBUG=false`, the backend requires production values for
 `DJANGO_SECRET_KEY`, `JWT_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, and

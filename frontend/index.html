@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0d1a15" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f1f4f1" media="(prefers-color-scheme: light)" />
     <meta
       name="description"
       content="DocuMind — ask questions across your own documents and get answers you can verify, with citations back to the exact passage."
@@ -16,17 +19,72 @@
         document.documentElement.dataset.theme = 'dark';
       }
     </script>
+    <style>
+      /* Boot shell: paints before any script or stylesheet arrives, so a slow
+         connection sees the app frame instead of a blank page. React replaces
+         it on mount. */
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0d1a15;
+      }
+      html[data-theme='light'],
+      html[data-theme='light'] body {
+        background: #f1f4f1;
+      }
+      .boot {
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+      }
+      .boot > div {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+      }
+      .boot-spin {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #24423a;
+        border-top-color: #e4f16b;
+        border-radius: 50%;
+        animation: boot-spin 0.7s linear infinite;
+      }
+      html[data-theme='light'] .boot-spin {
+        border-color: #c8d3ca;
+        border-top-color: #1d6a4e;
+      }
+      @keyframes boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-spin {
+          animation: none;
+        }
+      }
+    </style>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400..600;1,6..72,400..500&family=Instrument+Sans:ital,wght@0,400..700;1,400..600&family=Spline+Sans+Mono:wght@400..600&display=swap"
-      rel="stylesheet"
-    />
     <title>DocuMind</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot">
+        <div>
+          <svg width="38" height="38" viewBox="0 0 32 32" aria-hidden="true">
+            <rect width="32" height="32" rx="7" fill="#10231C" />
+            <rect x="8" y="6" width="16" height="20" rx="2" fill="#FBFCFA" />
+            <rect x="11" y="12" width="10" height="3" rx="1" fill="#E4F16B" />
+            <rect x="11" y="17.5" width="7" height="2" rx="1" fill="#B9C8BF" />
+            <rect x="11" y="21.5" width="9" height="2" rx="1" fill="#B9C8BF" />
+          </svg>
+          <span class="boot-spin"></span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -3,6 +3,7 @@
 .chat {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   min-height: 0;
 }
 
@@ -516,7 +517,8 @@
 
 @media (max-width: 640px) {
   .chat {
-    height: calc(100vh - 58px);
+    height: calc(100vh - var(--rail-h));
+    height: calc(100dvh - var(--rail-h));
   }
 
   .msg-col {
@@ -526,6 +528,12 @@
 
   .composer-wrap {
     padding: 6px 12px 14px;
+  }
+
+  /* 16px stops iOS Safari from zooming in when a field takes focus. */
+  .composer textarea,
+  .input {
+    font-size: 16px;
   }
 
   .msg-actions {
@@ -567,5 +575,13 @@
 @media (max-width: 1100px) {
   .chat-topbar {
     display: flex;
+  }
+}
+
+/* Touch devices: a 38px send button is awkward next to a 16px caret. */
+@media (pointer: coarse) {
+  .composer .send-btn {
+    width: 44px;
+    height: 44px;
   }
 }

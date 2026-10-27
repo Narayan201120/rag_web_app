@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
+import './styles/fonts.css';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/shell.css';
@@ -20,6 +21,15 @@ async function bootstrap() {
     const { installMocks } = await import('./mocks');
     installMocks();
   }
+
+  /* Let the boot shell paint one frame before React replaces it. Without this
+     the first paint can land after the app renders, so a slow connection shows
+     nothing until the bundle arrives. */
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
 
   const root = document.getElementById('root');
   if (!root) throw new Error('#root element not found');

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { streamChat } from '../lib/stream';
@@ -34,6 +34,24 @@ const SUGGESTIONS = [
   'Explain the main argument in plain language',
   'Where do my documents disagree?',
 ];
+
+/**
+ * Memoised answer body. While one answer streams, the other rows keep the
+ * same `message` object, so their markdown is not re-parsed on every frame.
+ */
+const AnswerBody = memo(function AnswerBody({
+  message,
+  onOpenCitations,
+}: {
+  message: UiMessage;
+  onOpenCitations: (message: UiMessage, focus: number | null) => void;
+}) {
+  const onCite = useCallback(
+    (n: number) => onOpenCitations(message, n),
+    [message, onOpenCitations],
+  );
+  return <Markdown text={message.answer} onCite={message.id !== null ? onCite : undefined} />;
+});
 
 export function Chat() {
   const navigate = useNavigate();
@@ -103,21 +121,53 @@ export function Chat() {
     };
   }, [activeId, toast]);
 
+  const stickRef = useRef(true);
+  const pendingTokens = useRef('');
+  const frameRef = useRef<number | null>(null);
+
   useEffect(() => {
+    if (!stickRef.current) return;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
-  const appendToken = useCallback((token: string) => {
+  useEffect(
+    () => () => {
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    },
+    [],
+  );
+
+  /* Tokens arrive many times per second. Buffer them and paint once per
+     frame so the transcript is not re-parsed and re-scrolled on each one. */
+  const flushTokens = useCallback(() => {
+    frameRef.current = null;
+    const chunk = pendingTokens.current;
+    if (!chunk) return;
+    pendingTokens.current = '';
     setMessages((current) => {
-      const next = [...current];
+      const next = current.slice();
       const last = next[next.length - 1];
-      if (last) {
-        next[next.length - 1] = { ...last, answer: last.answer + token };
-      }
+      if (last) next[next.length - 1] = { ...last, answer: last.answer + chunk };
       return next;
     });
   }, []);
+
+  const stopTokens = useCallback(() => {
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    pendingTokens.current = '';
+  }, []);
+
+  const appendToken = useCallback(
+    (token: string) => {
+      pendingTokens.current += token;
+      if (frameRef.current === null) frameRef.current = requestAnimationFrame(flushTokens);
+    },
+    [flushTokens],
+  );
 
   const send = useCallback(
     async (rawQuestion: string) => {
@@ -126,6 +176,7 @@ export function Chat() {
 
       setInput('');
       setFeedbackFor(null);
+      stickRef.current = true;
       setMessages((current) => [
         ...current,
         { id: null, question, answer: '', sources: [], streaming: true, error: null },
@@ -141,6 +192,7 @@ export function Chat() {
           signal: controller.signal,
           onToken: appendToken,
         });
+        stopTokens();
         setMessages((current) => {
           const next = [...current];
           const last = next[next.length - 1];
@@ -161,6 +213,7 @@ export function Chat() {
         }
         void refreshHistory();
       } catch (err) {
+        stopTokens();
         const aborted = err instanceof Error && err.name === 'AbortError';
         setMessages((current) => {
           const next = [...current];
@@ -184,7 +237,7 @@ export function Chat() {
         abortRef.current = null;
       }
     },
-    [activeId, appendToken, navigate, refreshHistory, streaming],
+    [activeId, appendToken, navigate, refreshHistory, stopTokens, streaming],
   );
 
   const stop = useCallback(() => {
@@ -375,7 +428,14 @@ export function Chat() {
             </div>
           </div>
         ) : (
-          <div className="msg-scroll" ref={scrollRef}>
+          <div
+            className="msg-scroll"
+            ref={scrollRef}
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+            }}
+          >
             <div className="msg-col">
               {messages.map((message, index) => (
                 <div key={message.id ?? `pending-${index}`}>
@@ -388,12 +448,7 @@ export function Chat() {
                         {message.error}
                       </div>
                     ) : (
-                      <Markdown
-                        text={message.answer}
-                        onCite={
-                          message.id !== null ? (n) => openCitations(message, n) : undefined
-                        }
-                      />
+                      <AnswerBody message={message} onOpenCitations={openCitations} />
                     )}
                     {message.streaming && <span className="caret" aria-hidden="true" />}
 

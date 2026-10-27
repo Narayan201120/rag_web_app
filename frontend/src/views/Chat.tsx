@@ -595,6 +595,7 @@ export function Chat() {
             <textarea
               ref={composerRef}
               rows={1}
+              name="question"
               placeholder="Ask your documents…"
               aria-label="Ask your documents"
               value={input}

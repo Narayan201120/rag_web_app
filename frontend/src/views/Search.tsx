@@ -95,6 +95,7 @@ export function SearchView() {
         <div className="search-box" ref={boxRef}>
           <input
             className="search-input"
+            name="q"
             placeholder="Type a phrase you half-remember…"
             aria-label="Search query"
             value={query}

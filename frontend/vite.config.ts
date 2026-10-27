@@ -1,8 +1,8 @@
 import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
+import preact from '@preact/preset-vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [preact()],
   server: {
     port: 3000,
   },
@@ -14,12 +14,12 @@ export default defineConfig({
     reportCompressedSize: false,
     rollupOptions: {
       output: {
-        /* React and the router change far less often than app code, so they
+        /* Preact and the router change far less often than app code, so they
            get their own long-cached chunks. Route chunks stay small. */
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
           if (id.includes('react-router') || id.includes('@remix-run')) return 'router';
-          if (/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react';
+          if (id.includes('preact')) return 'preact';
           return undefined;
         },
       },

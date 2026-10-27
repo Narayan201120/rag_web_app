@@ -58,6 +58,7 @@ export function ConversationList({
         <input
           className="input"
           type="search"
+          name="filter"
           placeholder="Filter conversations"
           aria-label="Filter conversations"
           value={filter}
